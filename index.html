@@ -1,1 +1,977 @@
+<!DOCTYPE html>
+<html lang="sv">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <title>Klassrumsplacering SO</title>
+  
+  <!-- Apple Web App Meta Tags för iPad helskärm -->
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Klassrum SO">
+  
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
 
+  <style>
+    body {
+      touch-action: manipulation;
+      user-select: none;
+      -webkit-user-select: none;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    }
+    @media print {
+      .no-print { display: none !important; }
+      .print-only { display: block !important; }
+      body { background: white !important; }
+      @page { size: landscape; margin: 0.5cm; }
+    }
+  </style>
+</head>
+<body class="bg-slate-100 text-slate-800 antialiased overflow-hidden">
+  <div id="root"></div>
+
+  <script type="text/babel">
+    const { useState, useEffect, useMemo, useRef } = React;
+
+    // 24 Bänkar med exakt specad struktur:
+    // Rad 1: d1, d2 (Dressinen) | fk1, fk2 (Första klass)
+    // Rad 2: r2_1 - r2_5 (vänster) | r2_6 - r2_10 (höger)
+    // Rad 3: r3_1 - r3_10 (sammanhängande bakre rad)
+    const DESK_CONFIG = [
+      { id: 'd1', row: 1, group: 'dressinen', label: 'Dressinen 1' },
+      { id: 'd2', row: 1, group: 'dressinen', label: 'Dressinen 2' },
+      { id: 'fk1', row: 1, group: 'forsta_klass', label: 'Första klass 1' },
+      { id: 'fk2', row: 1, group: 'forsta_klass', label: 'Första klass 2' },
+      
+      { id: 'r2_1', row: 2, group: 'mid_left', label: 'Mitten V1' },
+      { id: 'r2_2', row: 2, group: 'mid_left', label: 'Mitten V2' },
+      { id: 'r2_3', row: 2, group: 'mid_left', label: 'Mitten V3' },
+      { id: 'r2_4', row: 2, group: 'mid_left', label: 'Mitten V4' },
+      { id: 'r2_5', row: 2, group: 'mid_left', label: 'Mitten V5' },
+
+      { id: 'r2_6', row: 2, group: 'mid_right', label: 'Mitten H1' },
+      { id: 'r2_7', row: 2, group: 'mid_right', label: 'Mitten H2' },
+      { id: 'r2_8', row: 2, group: 'mid_right', label: 'Mitten H3' },
+      { id: 'r2_9', row: 2, group: 'mid_right', label: 'Mitten H4' },
+      { id: 'r2_10', row: 2, group: 'mid_right', label: 'Mitten H5' },
+
+      { id: 'r3_1', row: 3, group: 'back', label: 'Bak 1' },
+      { id: 'r3_2', row: 3, group: 'back', label: 'Bak 2' },
+      { id: 'r3_3', row: 3, group: 'back', label: 'Bak 3' },
+      { id: 'r3_4', row: 3, group: 'back', label: 'Bak 4' },
+      { id: 'r3_5', row: 3, group: 'back', label: 'Bak 5' },
+      { id: 'r3_6', row: 3, group: 'back', label: 'Bak 6' },
+      { id: 'r3_7', row: 3, group: 'back', label: 'Bak 7' },
+      { id: 'r3_8', row: 3, group: 'back', label: 'Bak 8' },
+      { id: 'r3_9', row: 3, group: 'back', label: 'Bak 9' },
+      { id: 'r3_10', row: 3, group: 'back', label: 'Bak 10' },
+    ];
+
+    // Grannrelationer för de 24 bänkarna
+    const ADJACENCY = {
+      d1: ['d2'],
+      d2: ['d1'],
+      fk1: ['fk2'],
+      fk2: ['fk1'],
+      r2_1: ['r2_2'],
+      r2_2: ['r2_1', 'r2_3'],
+      r2_3: ['r2_2', 'r2_4'],
+      r2_4: ['r2_3', 'r2_5'],
+      r2_5: ['r2_4'],
+      r2_6: ['r2_7'],
+      r2_7: ['r2_6', 'r2_8'],
+      r2_8: ['r2_7', 'r2_9'],
+      r2_9: ['r2_8', 'r2_10'],
+      r2_10: ['r2_9'],
+      r3_1: ['r3_2'],
+      r3_2: ['r3_1', 'r3_3'],
+      r3_3: ['r3_2', 'r3_4'],
+      r3_4: ['r3_3', 'r3_5'],
+      r3_5: ['r3_4', 'r3_6'],
+      r3_6: ['r3_5', 'r3_7'],
+      r3_7: ['r3_6', 'r3_8'],
+      r3_8: ['r3_7', 'r3_9'],
+      r3_9: ['r3_8', 'r3_10'],
+      r3_10: ['r3_9'],
+    };
+
+    // Databas förladdad från PDF-underlagen (7H & 8H)
+    const INITIAL_DATA = {
+      activeClassId: '7H',
+      classes: {
+        '7H': {
+          id: '7H',
+          name: '7H',
+          activeMonth: 'September',
+          students: [
+            { id: 's_klara', name: 'Klara', gender: 'F', prefs: { backRow: false, nearGroup: false, nearDoor: false, friends: [], avoid: [] } },
+            { id: 's_alicia', name: 'Alicia', gender: 'F', prefs: { backRow: false, nearGroup: false, nearDoor: false, friends: [], avoid: [] } },
+            { id: 's_marta', name: 'Märta', gender: 'F', prefs: { backRow: false, nearGroup: false, nearDoor: false, friends: [], avoid: [] } },
+            { id: 's_ramona', name: 'Ramona', gender: 'F', prefs: { backRow: false, nearGroup: false, nearDoor: false, friends: [], avoid: [] } },
+            { id: 's_amanda', name: 'Amanda', gender: 'F', prefs: { backRow: false, nearGroup: false, nearDoor: false, friends: [], avoid: [] } },
+            { id: 's_signe', name: 'Signe', gender: 'F', prefs: { backRow: false, nearGroup: false, nearDoor: false, friends: [], avoid: [] } },
+            { id: 's_mayra', name: 'Mayra', gender: 'F', prefs: { backRow: true, nearGroup: false, nearDoor: false, friends: [], avoid: [] } },
+            { id: 's_li', name: 'Li', gender: 'F', prefs: { backRow: true, nearGroup: false, nearDoor: false, friends: [], avoid: [] } },
+            { id: 's_hafsa', name: 'Hafsa', gender: 'F', prefs: { backRow: false, nearGroup: false, nearDoor: false, friends: [], avoid: [] } },
+            { id: 's_elsa', name: 'Elsa', gender: 'F', prefs: { backRow: false, nearGroup: false, nearDoor: false, friends: [], avoid: [] } },
+            
+            { id: 's_elliot', name: 'Elliot', gender: 'P', prefs: { backRow: false, nearGroup: false, nearDoor: false, friends: [], avoid: [] } },
+            { id: 's_edgar', name: 'Edgar', gender: 'P', prefs: { backRow: false, nearGroup: false, nearDoor: false, friends: [], avoid: [] } },
+            { id: 's_wilmer', name: 'Wilmer', gender: 'P', prefs: { backRow: false, nearGroup: false, nearDoor: false, friends: [], avoid: [] } },
+            { id: 's_ivar', name: 'Ivar', gender: 'P', prefs: { backRow: false, nearGroup: false, nearDoor: false, friends: [], avoid: [] } },
+            { id: 's_alfred', name: 'Alfred', gender: 'P', prefs: { backRow: false, nearGroup: false, nearDoor: false, friends: [], avoid: [] } },
+            { id: 's_liam', name: 'Liam', gender: 'P', prefs: { backRow: false, nearGroup: false, nearDoor: false, friends: [], avoid: [] } },
+            { id: 's_louie', name: 'Louie', gender: 'P', prefs: { backRow: false, nearGroup: false, nearDoor: false, friends: [], avoid: [] } },
+            { id: 's_oscar', name: 'Oscar', gender: 'P', prefs: { backRow: false, nearGroup: false, nearDoor: false, friends: [], avoid: [] } },
+            { id: 's_joar', name: 'Joar', gender: 'P', prefs: { backRow: true, nearGroup: true, nearDoor: false, friends: [], avoid: [] } },
+            { id: 's_martin', name: 'Martin', gender: 'P', prefs: { backRow: true, nearGroup: false, nearDoor: false, friends: [], avoid: [] } },
+            { id: 's_teodor', name: 'Teodor', gender: 'P', prefs: { backRow: true, nearGroup: false, nearDoor: false, friends: [], avoid: [] } },
+            { id: 's_mohammad', name: 'Mohammad', gender: 'P', prefs: { backRow: true, nearGroup: false, nearDoor: false, friends: [], avoid: [] } },
+            { id: 's_vincent', name: 'Vincent', gender: 'P', prefs: { backRow: true, nearGroup: false, nearDoor: false, friends: [], avoid: [] } },
+            { id: 's_valdemar', name: 'Valdemar', gender: 'P', prefs: { backRow: true, nearGroup: false, nearDoor: false, friends: [], avoid: [] } },
+            { id: 's_mohammed2', name: 'Mohammed', gender: 'P', prefs: { backRow: true, nearGroup: false, nearDoor: false, friends: [], avoid: [] } },
+          ],
+          months: {
+            'September': {
+              d1: 's_klara', d2: 's_alicia',
+              fk1: 's_elliot', fk2: 's_edgar',
+              r2_1: 's_ramona', r2_2: 's_marta', r2_3: 's_wilmer', r2_4: 's_ivar', r2_5: 's_alfred',
+              r2_6: 's_liam', r2_7: 's_louie', r2_8: 's_oscar', r2_9: 's_amanda', r2_10: 's_signe',
+              r3_1: 's_joar', r3_2: 's_martin', r3_3: 's_teodor', r3_4: 's_mayra', r3_5: 's_li',
+              r3_6: 's_mohammad', r3_7: 's_vincent', r3_8: 's_valdemar', r3_9: 's_mohammed2', r3_10: null
+            },
+            'Augusti': {
+              d1: 's_wilmer', d2: 's_vincent',
+              fk1: 's_mohammad', fk2: 's_ivar',
+              r2_1: 's_mohammed2', r2_2: 's_liam', r2_3: 's_teodor', r2_4: 's_li', r2_5: 's_marta',
+              r2_6: 's_klara', r2_7: 's_ramona', r2_8: 's_martin', r2_9: 's_valdemar', r2_10: 's_edgar',
+              r3_1: 's_joar', r3_2: 's_oscar', r3_3: 's_alicia', r3_4: 's_signe', r3_5: 's_elliot',
+              r3_6: 's_alfred', r3_7: 's_louie', r3_8: 's_mayra', r3_9: 's_amanda', r3_10: null
+            },
+            'Oktober': {
+              d1: 's_teodor', d2: 's_oscar',
+              fk1: 's_valdemar', fk2: 's_martin',
+              r2_1: 's_mohammed2', r2_2: 's_liam', r2_3: 's_vincent', r2_4: 's_amanda', r2_5: 's_klara',
+              r2_6: 's_ivar', r2_7: 's_alfred', r2_8: 's_alicia', r2_9: 's_li', r2_10: 's_ramona',
+              r3_1: 's_joar', r3_2: 's_signe', r3_3: 's_hafsa', r3_4: 's_edgar', r3_5: 's_mohammad',
+              r3_6: 's_louie', r3_7: 's_marta', r3_8: 's_elsa', r3_9: 's_wilmer', r3_10: 's_elliot'
+            },
+            'November': {
+              d1: 's_alfred', d2: 's_louie',
+              fk1: 's_amanda', fk2: 's_marta',
+              r2_1: 's_mohammad', r2_2: 's_mohammed2', r2_3: 's_li', r2_4: 's_signe', r2_5: 's_edgar',
+              r2_6: 's_oscar', r2_7: 's_wilmer', r2_8: 's_elsa', r2_9: 's_klara', r2_10: null,
+              r3_1: 's_joar', r3_2: 's_martin', r3_3: 's_ivar', r3_4: 's_alicia', r3_5: 's_ramona',
+              r3_6: 's_liam', r3_7: 's_teodor', r3_8: 's_valdemar', r3_9: 's_vincent', r3_10: null
+            }
+          }
+        },
+        '8H': {
+          id: '8H',
+          name: '8H',
+          activeMonth: 'September',
+          students: [
+            { id: 's8_melisia', name: 'Melisia', gender: 'F', prefs: { backRow: false, nearGroup: false, nearDoor: false, friends: [], avoid: [] } },
+            { id: 's8_nichole', name: 'Nichole', gender: 'F', prefs: { backRow: false, nearGroup: false, nearDoor: false, friends: [], avoid: [] } },
+            { id: 's8_chloe', name: 'Chloe', gender: 'F', prefs: { backRow: false, nearGroup: false, nearDoor: false, friends: [], avoid: [] } },
+            { id: 's8_marta', name: 'Märta', gender: 'F', prefs: { backRow: false, nearGroup: false, nearDoor: false, friends: [], avoid: [] } },
+            { id: 's8_astrid', name: 'Astrid', gender: 'F', prefs: { backRow: false, nearGroup: false, nearDoor: false, friends: [], avoid: [] } },
+            { id: 's8_annie', name: 'Annie', gender: 'F', prefs: { backRow: false, nearGroup: false, nearDoor: false, friends: [], avoid: [] } },
+            { id: 's8_nella', name: 'Nella', gender: 'F', prefs: { backRow: false, nearGroup: false, nearDoor: false, friends: [], avoid: [] } },
+            { id: 's8_freja', name: 'Freja', gender: 'F', prefs: { backRow: false, nearGroup: false, nearDoor: false, friends: [], avoid: [] } },
+            { id: 's8_sigrid', name: 'Sigrid', gender: 'F', prefs: { backRow: false, nearGroup: false, nearDoor: false, friends: [], avoid: [] } },
+            { id: 's8_greta', name: 'Greta', gender: 'F', prefs: { backRow: false, nearGroup: false, nearDoor: false, friends: [], avoid: [] } },
+            { id: 's8_julia', name: 'Julia', gender: 'F', prefs: { backRow: false, nearGroup: false, nearDoor: false, friends: [], avoid: [] } },
+            { id: 's8_vanessa', name: 'Vanessa', gender: 'F', prefs: { backRow: false, nearGroup: false, nearDoor: false, friends: [], avoid: [] } },
+
+            { id: 's8_nissel', name: 'Nisse L', gender: 'P', prefs: { backRow: false, nearGroup: false, nearDoor: false, friends: [], avoid: [] } },
+            { id: 's8_pelle', name: 'Pelle', gender: 'P', prefs: { backRow: false, nearGroup: false, nearDoor: false, friends: [], avoid: [] } },
+            { id: 's8_august', name: 'August', gender: 'P', prefs: { backRow: false, nearGroup: false, nearDoor: false, friends: [], avoid: [] } },
+            { id: 's8_felix', name: 'Felix', gender: 'P', prefs: { backRow: false, nearGroup: false, nearDoor: false, friends: [], avoid: [] } },
+            { id: 's8_nilsc', name: 'Nils C', gender: 'P', prefs: { backRow: false, nearGroup: false, nearDoor: false, friends: [], avoid: [] } },
+            { id: 's8_albin', name: 'Albin', gender: 'P', prefs: { backRow: false, nearGroup: false, nearDoor: false, friends: [], avoid: [] } },
+            { id: 's8_victor', name: 'Victor', gender: 'P', prefs: { backRow: false, nearGroup: false, nearDoor: false, friends: [], avoid: [] } },
+            { id: 's8_frank', name: 'Frank', gender: 'P', prefs: { backRow: false, nearGroup: false, nearDoor: false, friends: [], avoid: [] } },
+            { id: 's8_erik', name: 'Erik', gender: 'P', prefs: { backRow: false, nearGroup: false, nearDoor: false, friends: [], avoid: [] } },
+            { id: 's8_tage', name: 'Tage', gender: 'P', prefs: { backRow: false, nearGroup: false, nearDoor: false, friends: [], avoid: [] } },
+            { id: 's8_efraim', name: 'Efraim', gender: 'P', prefs: { backRow: false, nearGroup: false, nearDoor: false, friends: [], avoid: [] } },
+            { id: 's8_elis', name: 'Elis', gender: 'P', prefs: { backRow: false, nearGroup: false, nearDoor: false, friends: [], avoid: [] } },
+          ],
+          months: {
+            'September': {
+              d1: 's8_melisia', d2: 's8_nichole',
+              fk1: 's8_chloe', fk2: 's8_marta',
+              r2_1: 's8_astrid', r2_2: 's8_annie', r2_3: 's8_nissel', r2_4: 's8_pelle', r2_5: 's8_august',
+              r2_6: 's8_nella', r2_7: 's8_freja', r2_8: 's8_felix', r2_9: 's8_nilsc', r2_10: 's8_albin',
+              r3_1: 's8_victor', r3_2: 's8_frank', r3_3: 's8_sigrid', r3_4: 's8_greta', r3_5: 's8_julia',
+              r3_6: 's8_erik', r3_7: 's8_tage', r3_8: 's8_efraim', r3_9: 's8_elis', r3_10: null
+            },
+            'Augusti': {
+              d1: 's8_nilsc', d2: 's8_elis',
+              fk1: 's8_freja', fk2: 's8_annie',
+              r2_1: 's8_melisia', r2_2: 's8_nella', r2_3: 's8_marta', r2_4: 's8_efraim', r2_5: 's8_frank',
+              r2_6: 's8_erik', r2_7: 's8_victor', r2_8: 's8_tage', r2_9: 's8_greta', r2_10: 's8_sigrid',
+              r3_1: 's8_pelle', r3_2: 's8_albin', r3_3: 's8_julia', r3_4: 's8_chloe', r3_5: 's8_astrid',
+              r3_6: 's8_nichole', r3_7: 's8_nissel', r3_8: 's8_august', r3_9: 's8_felix', r3_10: null
+            },
+            'Oktober': {
+              d1: 's8_efraim', d2: 's8_victor',
+              fk1: 's8_elis', fk2: 's8_tage',
+              r2_1: 's8_julia', r2_2: 's8_freja', r2_3: 's8_nilsc', r2_4: 's8_erik', r2_5: 's8_elis',
+              r2_6: 's8_sigrid', r2_7: 's8_melisia', r2_8: 's8_greta', r2_9: 's8_chloe', r2_10: 's8_annie',
+              r3_1: 's8_frank', r3_2: 's8_pelle', r3_3: 's8_albin', r3_4: 's8_marta', r3_5: 's8_astrid',
+              r3_6: 's8_august', r3_7: 's8_felix', r3_8: 's8_nichole', r3_9: 's8_nella', r3_10: 's8_nissel'
+            }
+          }
+        }
+      }
+    };
+
+    function App() {
+      // Hämta sparad data från localStorage eller ladda grunddata
+      const [appData, setAppData] = useState(() => {
+        try {
+          const saved = localStorage.getItem('klassrum_app_data_v3');
+          if (saved) return JSON.parse(saved);
+        } catch (e) {
+          console.error(e);
+        }
+        return INITIAL_DATA;
+      });
+
+      const [selectedDeskId, setSelectedDeskId] = useState(null);
+      const [selectedStudentId, setSelectedStudentId] = useState(null);
+      const [editingStudentId, setEditingStudentId] = useState(null);
+      const [isPrintMode, setIsPrintMode] = useState(false);
+      const [newMonthName, setNewMonthName] = useState('');
+      const [showNewMonthModal, setShowNewMonthModal] = useState(false);
+      const [showNewClassModal, setShowNewClassModal] = useState(false);
+      const [newClassName, setNewClassName] = useState('');
+      const fileInputRef = useRef(null);
+
+      // Spara i LocalStorage vid varje ändring
+      useEffect(() => {
+        try {
+          localStorage.setItem('klassrum_app_data_v3', JSON.stringify(appData));
+        } catch (e) {
+          console.error(e);
+        }
+      }, [appData]);
+
+      const currentClass = appData.classes[appData.activeClassId] || Object.values(appData.classes)[0];
+      const currentMonth = currentClass.activeMonth;
+      const currentSeating = currentClass.months[currentMonth] || {};
+      const students = currentClass.students || [];
+
+      // Elevkatalog för snabb uppslagning
+      const studentMap = useMemo(() => {
+        const map = {};
+        students.forEach(s => { map[s.id] = s; });
+        return map;
+      }, [students]);
+
+      // Gruppera efter Flickor och Pojkar
+      const girls = useMemo(() => students.filter(s => s.gender === 'F'), [students]);
+      const boys = useMemo(() => students.filter(s => s.gender === 'P'), [students]);
+
+      // Hitta vilken bänk en elev sitter på
+      const getDeskForStudent = (studentId) => {
+        for (const [deskId, sId] of Object.entries(currentSeating)) {
+          if (sId === studentId) return deskId;
+        }
+        return null;
+      };
+
+      // Uppdatera placering
+      const updateSeating = (newSeatingMap) => {
+        setAppData(prev => ({
+          ...prev,
+          classes: {
+            ...prev.classes,
+            [currentClass.id]: {
+              ...prev.classes[currentClass.id],
+              months: {
+                ...prev.classes[currentClass.id].months,
+                [currentMonth]: newSeatingMap
+              }
+            }
+          }
+        }));
+      };
+
+      // Klickhanterare för bänkar och högerspalt
+      const handleDeskClick = (deskId) => {
+        // Om en elev är markerad i högerspalten -> placera eleven här
+        if (selectedStudentId) {
+          const currentOccupant = currentSeating[deskId];
+          const previousDesk = getDeskForStudent(selectedStudentId);
+
+          const updated = { ...currentSeating };
+          if (previousDesk) {
+            updated[previousDesk] = currentOccupant || null;
+          }
+          updated[deskId] = selectedStudentId;
+
+          updateSeating(updated);
+          setSelectedStudentId(null);
+          setSelectedDeskId(null);
+          return;
+        }
+
+        // Om en bänk redan är markerad -> byt plats med klickad bänk
+        if (selectedDeskId) {
+          if (selectedDeskId === deskId) {
+            setSelectedDeskId(null);
+            return;
+          }
+          const s1 = currentSeating[selectedDeskId] || null;
+          const s2 = currentSeating[deskId] || null;
+
+          const updated = { ...currentSeating, [selectedDeskId]: s2, [deskId]: s1 };
+          updateSeating(updated);
+          setSelectedDeskId(null);
+          return;
+        }
+
+        // Annars markera bänken
+        setSelectedDeskId(deskId);
+      };
+
+      // Klick på elev i högerspalten
+      const handleStudentListClick = (studentId) => {
+        if (selectedDeskId) {
+          // Placera vald elev i den markerade bänken direkt
+          const previousDesk = getDeskForStudent(studentId);
+          const currentOccupant = currentSeating[selectedDeskId];
+
+          const updated = { ...currentSeating };
+          if (previousDesk) {
+            updated[previousDesk] = currentOccupant || null;
+          }
+          updated[selectedDeskId] = studentId;
+
+          updateSeating(updated);
+          setSelectedDeskId(null);
+          return;
+        }
+
+        if (selectedStudentId === studentId) {
+          setSelectedStudentId(null);
+        } else {
+          setSelectedStudentId(studentId);
+        }
+      };
+
+      // Lyft ut elev ur bänk
+      const handleUnseat = (studentId, e) => {
+        if (e) e.stopPropagation();
+        const deskId = getDeskForStudent(studentId);
+        if (deskId) {
+          const updated = { ...currentSeating, [deskId]: null };
+          updateSeating(updated);
+        }
+        if (selectedStudentId === studentId) setSelectedStudentId(null);
+      };
+
+      // Beräkna statusfärg (Grön, Gul, Röd)
+      const getDeskStatus = (deskId, student) => {
+        if (!student) return 'empty';
+        const neighborIds = (ADJACENCY[deskId] || []).map(id => currentSeating[id]).filter(Boolean);
+        const neighbors = neighborIds.map(id => studentMap[id]).filter(Boolean);
+        const prefs = student.prefs || {};
+
+        // RÖD: Kollision med "Får inte sitta bredvid"
+        if (prefs.avoid && prefs.avoid.some(id => neighborIds.includes(id))) {
+          return 'red';
+        }
+
+        // RÖD: Särskilda behov ej uppfyllt
+        if (prefs.backRow && !deskId.startsWith('r3')) return 'red';
+        if (prefs.nearGroup && !['r3_1', 'r3_2', 'r2_1'].includes(deskId)) return 'red';
+        if (prefs.nearDoor && !['d1', 'd2', 'r2_1'].includes(deskId)) return 'red';
+
+        // GUL: Saknar minst 1 av samma kön (om eleven har grannar)
+        if (neighbors.length > 0) {
+          const hasSameGender = neighbors.some(n => n.gender === student.gender);
+          if (!hasSameGender) return 'yellow';
+        }
+
+        // GUL: Önskad bänkkamrat finns men sitter inte bredvid
+        if (prefs.friends && prefs.friends.length > 0) {
+          const friendNextTo = prefs.friends.some(id => neighborIds.includes(id));
+          if (!friendNextTo) return 'yellow';
+        }
+
+        return 'green';
+      };
+
+      // Dynamisk typografi för elevnamn så att de aldrig klipps
+      const formatStudentName = (name) => {
+        if (!name) return { text: '', fontSize: 'text-xs' };
+        if (name.length <= 6) return { text: name, fontSize: 'text-sm font-semibold' };
+        if (name.length <= 9) return { text: name, fontSize: 'text-xs font-semibold' };
+        if (name.length <= 13) return { text: name, fontSize: 'text-[10px] font-semibold leading-tight' };
+        return { text: name, fontSize: 'text-[9px] font-medium leading-tight' };
+      };
+
+      // Exportera och Importera backup (JSON) för iPad-flytt
+      const exportBackup = () => {
+        const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(appData, null, 2));
+        const downloadAnchor = document.createElement('a');
+        downloadAnchor.setAttribute("href", dataStr);
+        downloadAnchor.setAttribute("download", `klassrum_backup_${appData.activeClassId}.json`);
+        document.body.appendChild(downloadAnchor);
+        downloadAnchor.click();
+        downloadAnchor.remove();
+      };
+
+      const importBackup = (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = (event) => {
+          try {
+            const parsed = JSON.parse(event.target.result);
+            if (parsed.classes) {
+              setAppData(parsed);
+              alert("Backup inläst!");
+            }
+          } catch (err) {
+            alert("Kunde inte läsa in filen: Felaktigt JSON-format.");
+          }
+        };
+        reader.readAsText(file);
+      };
+
+      // Skapa ny månad
+      const handleCreateMonth = () => {
+        if (!newMonthName.trim()) return;
+        const name = newMonthName.trim();
+        setAppData(prev => ({
+          ...prev,
+          classes: {
+            ...prev.classes,
+            [currentClass.id]: {
+              ...prev.classes[currentClass.id],
+              activeMonth: name,
+              months: {
+                ...prev.classes[currentClass.id].months,
+                [name]: { ...currentSeating } // kopiera nuvarande layout som startpunkt
+              }
+            }
+          }
+        }));
+        setNewMonthName('');
+        setShowNewMonthModal(false);
+      };
+
+      // Skapa ny klass
+      const handleCreateClass = () => {
+        if (!newClassName.trim()) return;
+        const id = newClassName.trim();
+        setAppData(prev => ({
+          ...prev,
+          activeClassId: id,
+          classes: {
+            ...prev.classes,
+            [id]: {
+              id: id,
+              name: id,
+              activeMonth: 'Ny period',
+              students: [],
+              months: {
+                'Ny period': {}
+              }
+            }
+          }
+        }));
+        setNewClassName('');
+        setShowNewClassModal(false);
+      };
+
+      // Bänk-komponent med skolbänksestetik
+      const renderDesk = (deskId, customClass = "") => {
+        const studentId = currentSeating[deskId];
+        const student = studentMap[studentId];
+        const isSelected = selectedDeskId === deskId;
+        const status = getDeskStatus(deskId, student);
+
+        let borderAndBg = "bg-amber-100/90 border-amber-300 text-amber-900"; // tom bänk
+        if (student) {
+          if (status === 'green') {
+            borderAndBg = "bg-emerald-50 border-emerald-500 text-emerald-950 shadow-sm";
+          } else if (status === 'yellow') {
+            borderAndBg = "bg-amber-50 border-amber-500 text-amber-950 shadow-sm";
+          } else if (status === 'red') {
+            borderAndBg = "bg-rose-50 border-rose-500 text-rose-950 shadow-sm";
+          }
+        }
+
+        const nameStyle = formatStudentName(student?.name);
+
+        return (
+          <div
+            key={deskId}
+            onClick={() => !isPrintMode && handleDeskClick(deskId)}
+            className={`
+              relative flex flex-col items-center justify-center 
+              h-16 w-full rounded-md border-2 transition-all cursor-pointer
+              shadow-[0_2px_4px_rgba(0,0,0,0.05)]
+              ${borderAndBg}
+              ${isSelected ? 'ring-4 ring-blue-500 scale-[1.02] z-20' : 'hover:border-blue-400'}
+              ${customClass}
+            `}
+          >
+            {/* Pennskåra */}
+            <div className="absolute top-1 left-3 right-3 h-[3px] bg-black/10 rounded-full"></div>
+
+            {/* Elevnamn */}
+            <div className="mt-1 px-1 text-center font-sans tracking-tight leading-snug">
+              {student ? (
+                <div className="flex flex-col items-center">
+                  <span className={`${nameStyle.fontSize} line-clamp-2`}>{student.name}</span>
+                  {!isPrintMode && (
+                    <span className="text-[9px] font-bold opacity-60">
+                      {student.gender === 'F' ? 'F' : 'P'}
+                    </span>
+                  )}
+                </div>
+              ) : (
+                <span className="text-[11px] font-medium text-amber-700/40">Ledig</span>
+              )}
+            </div>
+
+            {/* Färgindikator i hörnet */}
+            {!isPrintMode && student && (
+              <div className={`absolute bottom-1 right-1 w-2.5 h-2.5 rounded-full ${
+                status === 'green' ? 'bg-emerald-500' :
+                status === 'yellow' ? 'bg-amber-500' : 'bg-rose-500'
+              }`} />
+            )}
+          </div>
+        );
+      };
+
+      return (
+        <div className="flex h-screen w-screen bg-slate-200 overflow-hidden font-sans">
+          
+          {/* HUVUDYTA: KLASSRUMMET */}
+          <div className="flex-1 flex flex-col h-full bg-slate-50 relative p-3">
+            
+            {/* TOPPMENY (Döljs i utskriftsläge) */}
+            {!isPrintMode && (
+              <header className="flex items-center justify-between bg-white px-4 py-2.5 rounded-xl shadow-sm border border-slate-200 mb-2">
+                <div className="flex items-center gap-3">
+                  <span className="font-black tracking-tight text-blue-600 text-lg">SO</span>
+
+                  {/* Välj Klass */}
+                  <select
+                    value={appData.activeClassId}
+                    onChange={(e) => setAppData(prev => ({ ...prev, activeClassId: e.target.value }))}
+                    className="bg-slate-100 font-bold text-slate-800 border border-slate-300 rounded-lg px-2.5 py-1 text-sm focus:ring-2 focus:ring-blue-500"
+                  >
+                    {Object.values(appData.classes).map(c => (
+                      <option key={c.id} value={c.id}>Klass {c.name}</option>
+                    ))}
+                  </select>
+
+                  <button
+                    onClick={() => setShowNewClassModal(true)}
+                    className="text-xs bg-slate-100 hover:bg-slate-200 text-slate-700 px-2 py-1 rounded-md border border-slate-300 font-medium"
+                    title="Skapa ny klass"
+                  >
+                    + Ny klass
+                  </button>
+
+                  <div className="h-5 w-px bg-slate-300 mx-1"></div>
+
+                  {/* Välj Månad */}
+                  <select
+                    value={currentMonth}
+                    onChange={(e) => {
+                      const m = e.target.value;
+                      setAppData(prev => ({
+                        ...prev,
+                        classes: {
+                          ...prev.classes,
+                          [currentClass.id]: {
+                            ...prev.classes[currentClass.id],
+                            activeMonth: m
+                          }
+                        }
+                      }));
+                    }}
+                    className="bg-slate-100 font-semibold text-slate-800 border border-slate-300 rounded-lg px-2.5 py-1 text-sm focus:ring-2 focus:ring-blue-500"
+                  >
+                    {Object.keys(currentClass.months).map(m => (
+                      <option key={m} value={m}>{m}</option>
+                    ))}
+                  </select>
+
+                  <button
+                    onClick={() => setShowNewMonthModal(true)}
+                    className="text-xs bg-blue-50 hover:bg-blue-100 text-blue-700 px-2 py-1 rounded-md border border-blue-200 font-medium"
+                  >
+                    💾 Spara månad
+                  </button>
+                </div>
+
+                {/* Funktionsknappar */}
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => {
+                      setIsPrintMode(true);
+                      setTimeout(() => window.print(), 300);
+                    }}
+                    className="flex items-center gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-medium text-xs px-3 py-1.5 rounded-lg shadow-sm"
+                  >
+                    <span>🖨️ Spara som PDF</span>
+                  </button>
+
+                  <button
+                    onClick={exportBackup}
+                    className="bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs px-2.5 py-1.5 rounded-lg border border-slate-300"
+                    title="Ladda ner JSON-backup till Google Drive"
+                  >
+                    Exportera backup
+                  </button>
+
+                  <label className="cursor-pointer bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs px-2.5 py-1.5 rounded-lg border border-slate-300">
+                    Importera
+                    <input
+                      ref={fileInputRef}
+                      type="file"
+                      accept=".json"
+                      onChange={importBackup}
+                      className="hidden"
+                    />
+                  </label>
+                </div>
+              </header>
+            )}
+
+            {/* PRESENTATIONSHUVUD I UTSKRIFTSLÄGE */}
+            {isPrintMode && (
+              <div className="flex items-center justify-between pb-2 mb-2 border-b border-slate-300">
+                <h1 className="text-xl font-bold text-slate-800">
+                  Placering SO - Klass {currentClass.name} ({currentMonth})
+                </h1>
+                <button
+                  onClick={() => setIsPrintMode(false)}
+                  className="no-print bg-slate-200 text-slate-800 px-3 py-1 rounded text-sm font-semibold"
+                >
+                  Tillbaka till redigering
+                </button>
+              </div>
+            )}
+
+            {/* KLASSRUMMETS FAST SPELPLAN */}
+            <div className="flex-1 flex flex-col justify-between bg-white rounded-2xl border border-slate-200 p-4 shadow-sm relative overflow-hidden">
+              
+              {/* RAD 0: KATEDER (Mitten) & DÖRR (Vänster) */}
+              <div className="flex items-center justify-between w-full h-12 relative px-2">
+                <div className="bg-rose-600 text-white font-bold px-5 py-2 rounded-md shadow text-sm tracking-wide">
+                  Dörr
+                </div>
+                <div className="bg-slate-500 text-white font-bold px-10 py-2.5 rounded-md shadow text-sm tracking-wide absolute left-1/2 -translate-x-1/2">
+                  Kateder
+                </div>
+                <div className="w-16"></div>
+              </div>
+
+              {/* RAD 1: DRESSINEN & FÖRSTA KLASS 
+                  Centrerade rakt ovanför bänk 2-4 på vänster och bänk 7-9 på höger sida.
+                  Bänkarna har EXAKT samma bredd som rad 3:s 10 bänkar via ett 10-kolumnsraster.
+              */}
+              <div className="w-full grid grid-cols-10 gap-2.5 px-2 my-1">
+                {/* Dressinen i bänk 2-4 kolumnerna */}
+                <div className="col-start-2 col-span-3 flex justify-center">
+                  <div className="border border-slate-300 bg-slate-50/70 p-1.5 rounded-lg flex flex-col items-center w-full max-w-[210px]">
+                    <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Dressinen</span>
+                    <div className="grid grid-cols-2 gap-2 w-full">
+                      {renderDesk('d1')}
+                      {renderDesk('d2')}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Tomrum i mitten */}
+                <div className="col-span-2"></div>
+
+                {/* Första klass i bänk 7-9 kolumnerna */}
+                <div className="col-start-7 col-span-3 flex justify-center">
+                  <div className="border border-slate-300 bg-slate-50/70 p-1.5 rounded-lg flex flex-col items-center w-full max-w-[210px]">
+                    <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Första klass</span>
+                    <div className="grid grid-cols-2 gap-2 w-full">
+                      {renderDesk('fk1')}
+                      {renderDesk('fk2')}
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* RAD 2: MITTENRADEN (5 + 5 BÄNKAR) */}
+              <div className="w-full flex items-center justify-between gap-4 px-2 my-1">
+                {/* Vänster grupp (5 bänkar) */}
+                <div className="flex-1 grid grid-cols-5 gap-2">
+                  {renderDesk('r2_1')}
+                  {renderDesk('r2_2')}
+                  {renderDesk('r2_3')}
+                  {renderDesk('r2_4')}
+                  {renderDesk('r2_5')}
+                </div>
+
+                {/* Mittgång */}
+                <div className="w-6 flex items-center justify-center text-slate-300 font-bold text-xs">
+                  ||
+                </div>
+
+                {/* Höger grupp (5 bänkar) */}
+                <div className="flex-1 grid grid-cols-5 gap-2">
+                  {renderDesk('r2_6')}
+                  {renderDesk('r2_7')}
+                  {renderDesk('r2_8')}
+                  {renderDesk('r2_9')}
+                  {renderDesk('r2_10')}
+                </div>
+              </div>
+
+              {/* RAD 3: BAKRE RADEN (10 SAMMANHÄNGANDE BÄNKAR) */}
+              <div className="w-full px-2 my-1">
+                <div className="grid grid-cols-10 gap-2 w-full">
+                  {renderDesk('r3_1')}
+                  {renderDesk('r3_2')}
+                  {renderDesk('r3_3')}
+                  {renderDesk('r3_4')}
+                  {renderDesk('r3_5')}
+                  {renderDesk('r3_6')}
+                  {renderDesk('r3_7')}
+                  {renderDesk('r3_8')}
+                  {renderDesk('r3_9')}
+                  {renderDesk('r3_10')}
+                </div>
+              </div>
+
+              {/* BOTTENRAD: GRUPPRUM NERE TILL VÄNSTER */}
+              <div className="flex items-center justify-between w-full h-10 px-2 mt-1">
+                <div className="bg-rose-600 text-white font-bold px-4 py-1.5 rounded-md shadow text-xs tracking-wide">
+                  Grupprum
+                </div>
+                
+                {/* Färgförklaring i botten */}
+                {!isPrintMode && (
+                  <div className="flex items-center gap-4 text-xs font-semibold text-slate-500">
+                    <span className="flex items-center gap-1.5">
+                      <span className="w-2.5 h-2.5 rounded-full bg-emerald-500"></span> Inga konflikter
+                    </span>
+                    <span className="flex items-center gap-1.5">
+                      <span className="w-2.5 h-2.5 rounded-full bg-amber-500"></span> Små avvikelser / kön
+                    </span>
+                    <span className="flex items-center gap-1.5">
+                      <span className="w-2.5 h-2.5 rounded-full bg-rose-500"></span> Regelkollision
+                    </span>
+                  </div>
+                )}
+                <div className="w-16"></div>
+              </div>
+            </div>
+          </div>
+
+          {/* HÖGER SPALT: KLASSLISTA (FLICKOR & POJKAR) - Döljs i utskriftsläge */}
+          {!isPrintMode && (
+            <aside className="w-72 bg-white border-l border-slate-300 flex flex-col h-full shadow-lg">
+              <div className="p-3 border-b border-slate-200 bg-slate-50">
+                <div className="flex items-center justify-between">
+                  <h2 className="font-bold text-slate-800 text-sm">Elever ({students.length})</h2>
+                  <span className="text-[11px] font-medium text-slate-500">
+                    Klicka för att placera
+                  </span>
+                </div>
+                {selectedStudentId && (
+                  <div className="mt-2 bg-blue-50 border border-blue-200 text-blue-800 text-xs px-2.5 py-1.5 rounded flex items-center justify-between">
+                    <span>Vald: <strong>{studentMap[selectedStudentId]?.name}</strong></span>
+                    <button onClick={() => setSelectedStudentId(null)} className="font-bold text-blue-600">✕</button>
+                  </div>
+                )}
+              </div>
+
+              {/* Rullningsbar lista uppdelad på Flickor och Pojkar */}
+              <div className="flex-1 overflow-y-auto p-3 space-y-4">
+                
+                {/* FLICKOR */}
+                <div>
+                  <div className="flex items-center justify-between text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5 border-b pb-1">
+                    <span>Flickor ({girls.length})</span>
+                  </div>
+                  <div className="space-y-1">
+                    {girls.map(student => {
+                      const currentDesk = getDeskForStudent(student.id);
+                      const isSelected = selectedStudentId === student.id;
+                      const prefs = student.prefs || {};
+
+                      return (
+                        <div
+                          key={student.id}
+                          onClick={() => handleStudentListClick(student.id)}
+                          className={`
+                            flex items-center justify-between p-1.5 rounded-lg border text-xs cursor-pointer transition
+                            ${isSelected ? 'bg-blue-50 border-blue-500 ring-2 ring-blue-300' : 'bg-slate-50 border-slate-200 hover:bg-slate-100'}
+                          `}
+                        >
+                          <div className="flex items-center gap-1.5 min-w-0">
+                            <span className="w-2 h-2 rounded-full bg-pink-400 shrink-0"></span>
+                            <span className="font-semibold text-slate-800 truncate">{student.name}</span>
+                          </div>
+
+                          <div className="flex items-center gap-1 shrink-0">
+                            {/* Komprimerade behovsetiketter */}
+                            {prefs.backRow && <span className="bg-slate-200 text-[9px] px-1 py-0.5 rounded font-bold text-slate-700">Bak</span>}
+                            {prefs.nearGroup && <span className="bg-indigo-100 text-[9px] px-1 py-0.5 rounded font-bold text-indigo-700">Grupp</span>}
+                            {prefs.nearDoor && <span className="bg-amber-100 text-[9px] px-1 py-0.5 rounded font-bold text-amber-700">Dörr</span>}
+
+                            {/* Bänkstatus / Avbänkningskryss */}
+                            {currentDesk ? (
+                              <button
+                                onClick={(e) => handleUnseat(student.id, e)}
+                                title="Ta bort från bänk"
+                                className="ml-1 bg-emerald-100 hover:bg-rose-100 text-emerald-800 hover:text-rose-700 text-[10px] font-bold px-1.5 py-0.5 rounded transition"
+                              >
+                                {currentDesk.toUpperCase()} ✕
+                              </button>
+                            ) : (
+                              <span className="text-[10px] text-slate-400 italic px-1">Oplacerad</span>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* POJKAR */}
+                <div>
+                  <div className="flex items-center justify-between text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5 border-b pb-1">
+                    <span>Pojkar ({boys.length})</span>
+                  </div>
+                  <div className="space-y-1">
+                    {boys.map(student => {
+                      const currentDesk = getDeskForStudent(student.id);
+                      const isSelected = selectedStudentId === student.id;
+                      const prefs = student.prefs || {};
+
+                      return (
+                        <div
+                          key={student.id}
+                          onClick={() => handleStudentListClick(student.id)}
+                          className={`
+                            flex items-center justify-between p-1.5 rounded-lg border text-xs cursor-pointer transition
+                            ${isSelected ? 'bg-blue-50 border-blue-500 ring-2 ring-blue-300' : 'bg-slate-50 border-slate-200 hover:bg-slate-100'}
+                          `}
+                        >
+                          <div className="flex items-center gap-1.5 min-w-0">
+                            <span className="w-2 h-2 rounded-full bg-blue-400 shrink-0"></span>
+                            <span className="font-semibold text-slate-800 truncate">{student.name}</span>
+                          </div>
+
+                          <div className="flex items-center gap-1 shrink-0">
+                            {/* Komprimerade behovsetiketter */}
+                            {prefs.backRow && <span className="bg-slate-200 text-[9px] px-1 py-0.5 rounded font-bold text-slate-700">Bak</span>}
+                            {prefs.nearGroup && <span className="bg-indigo-100 text-[9px] px-1 py-0.5 rounded font-bold text-indigo-700">Grupp</span>}
+                            {prefs.nearDoor && <span className="bg-amber-100 text-[9px] px-1 py-0.5 rounded font-bold text-amber-700">Dörr</span>}
+
+                            {/* Bänkstatus / Avbänkningskryss */}
+                            {currentDesk ? (
+                              <button
+                                onClick={(e) => handleUnseat(student.id, e)}
+                                title="Ta bort från bänk"
+                                className="ml-1 bg-emerald-100 hover:bg-rose-100 text-emerald-800 hover:text-rose-700 text-[10px] font-bold px-1.5 py-0.5 rounded transition"
+                              >
+                                {currentDesk.toUpperCase()} ✕
+                              </button>
+                            ) : (
+                              <span className="text-[10px] text-slate-400 italic px-1">Oplacerad</span>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+
+              </div>
+            </aside>
+          )}
+
+          {/* MODAL: SPARA NY MÅNAD */}
+          {showNewMonthModal && (
+            <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+              <div className="bg-white rounded-xl p-5 max-w-sm w-full shadow-2xl">
+                <h3 className="text-base font-bold text-slate-800 mb-2">Spara aktuell placering</h3>
+                <p className="text-xs text-slate-500 mb-4">Ange namnet på perioden (t.ex. "Oktober 2026", "December" el dyl).</p>
+                <input
+                  type="text"
+                  placeholder="Månadens namn..."
+                  value={newMonthName}
+                  onChange={(e) => setNewMonthName(e.target.value)}
+                  className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm mb-4 focus:ring-2 focus:ring-blue-500"
+                />
+                <div className="flex justify-end gap-2">
+                  <button
+                    onClick={() => setShowNewMonthModal(false)}
+                    className="px-3 py-1.5 text-xs text-slate-600 hover:bg-slate-100 rounded-lg font-medium"
+                  >
+                    Avbryt
+                  </button>
+                  <button
+                    onClick={handleCreateMonth}
+                    className="px-3 py-1.5 text-xs bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-semibold"
+                  >
+                    Spara månad
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* MODAL: SKAPA NY KLASS */}
+          {showNewClassModal && (
+            <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+              <div className="bg-white rounded-xl p-5 max-w-sm w-full shadow-2xl">
+                <h3 className="text-base font-bold text-slate-800 mb-2">Skapa ny klass</h3>
+                <input
+                  type="text"
+                  placeholder="Klassnamn (t.ex. 9A)..."
+                  value={newClassName}
+                  onChange={(e) => setNewClassName(e.target.value)}
+                  className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm mb-4 focus:ring-2 focus:ring-blue-500"
+                />
+                <div className="flex justify-end gap-2">
+                  <button
+                    onClick={() => setShowNewClassModal(false)}
+                    className="px-3 py-1.5 text-xs text-slate-600 hover:bg-slate-100 rounded-lg font-medium"
+                  >
+                    Avbryt
+                  </button>
+                  <button
+                    onClick={handleCreateClass}
+                    className="px-3 py-1.5 text-xs bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-semibold"
+                  >
+                    Skapa klass
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+        </div>
+      );
+    }
+
+    const root = ReactDOM.createRoot(document.getElementById('root'));
+    root.render(<App />);
+  </script>
+</body>
+</html>

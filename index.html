@@ -5,7 +5,6 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
   <title>Klassrumsplacering SO</title>
   
-  <!-- Apple Web App Meta Tags för iPad helskärm -->
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="Klassrum SO">
@@ -34,37 +33,7 @@
   <div id="root"></div>
 
   <script type="text/babel">
-    const { useState, useEffect, useMemo, useRef } = React;
-
-    const DESK_CONFIG = [
-      { id: 'd1', row: 1, group: 'dressinen', label: 'Dressinen 1' },
-      { id: 'd2', row: 1, group: 'dressinen', label: 'Dressinen 2' },
-      { id: 'fk1', row: 1, group: 'forsta_klass', label: 'Första klass 1' },
-      { id: 'fk2', row: 1, group: 'forsta_klass', label: 'Första klass 2' },
-      
-      { id: 'r2_1', row: 2, group: 'mid_left', label: 'Mitten V1' },
-      { id: 'r2_2', row: 2, group: 'mid_left', label: 'Mitten V2' },
-      { id: 'r2_3', row: 2, group: 'mid_left', label: 'Mitten V3' },
-      { id: 'r2_4', row: 2, group: 'mid_left', label: 'Mitten V4' },
-      { id: 'r2_5', row: 2, group: 'mid_left', label: 'Mitten V5' },
-
-      { id: 'r2_6', row: 2, group: 'mid_right', label: 'Mitten H1' },
-      { id: 'r2_7', row: 2, group: 'mid_right', label: 'Mitten H2' },
-      { id: 'r2_8', row: 2, group: 'mid_right', label: 'Mitten H3' },
-      { id: 'r2_9', row: 2, group: 'mid_right', label: 'Mitten H4' },
-      { id: 'r2_10', row: 2, group: 'mid_right', label: 'Mitten H5' },
-
-      { id: 'r3_1', row: 3, group: 'back', label: 'Bak 1' },
-      { id: 'r3_2', row: 3, group: 'back', label: 'Bak 2' },
-      { id: 'r3_3', row: 3, group: 'back', label: 'Bak 3' },
-      { id: 'r3_4', row: 3, group: 'back', label: 'Bak 4' },
-      { id: 'r3_5', row: 3, group: 'back', label: 'Bak 5' },
-      { id: 'r3_6', row: 3, group: 'back', label: 'Bak 6' },
-      { id: 'r3_7', row: 3, group: 'back', label: 'Bak 7' },
-      { id: 'r3_8', row: 3, group: 'back', label: 'Bak 8' },
-      { id: 'r3_9', row: 3, group: 'back', label: 'Bak 9' },
-      { id: 'r3_10', row: 3, group: 'back', label: 'Bak 10' },
-    ];
+    const { useState, useEffect, useMemo } = React;
 
     const ADJACENCY = {
       d1: ['d2'],
@@ -195,7 +164,7 @@
     function App() {
       const [appData, setAppData] = useState(() => {
         try {
-          const saved = localStorage.getItem('klassrum_app_data_v4');
+          const saved = localStorage.getItem('klassrum_app_data_v5');
           if (saved) return JSON.parse(saved);
         } catch (e) {
           console.error(e);
@@ -205,17 +174,22 @@
 
       const [selectedDeskId, setSelectedDeskId] = useState(null);
       const [selectedStudentId, setSelectedStudentId] = useState(null);
-      const [editingStudent, setEditingStudent] = useState(null);
       const [isPrintMode, setIsPrintMode] = useState(false);
-      const [newMonthName, setNewMonthName] = useState('');
+      const [showClassModal, setShowClassModal] = useState(false);
       const [showNewMonthModal, setShowNewMonthModal] = useState(false);
+      const [newMonthName, setNewMonthName] = useState('');
       const [showNewClassModal, setShowNewClassModal] = useState(false);
       const [newClassName, setNewClassName] = useState('');
-      const fileInputRef = useRef(null);
+
+      // Form state i redigera klasslista
+      const [tempClassName, setTempClassName] = useState('');
+      const [editingStudentId, setEditingStudentId] = useState(null);
+      const [newStudentName, setNewStudentName] = useState('');
+      const [newStudentGender, setNewStudentGender] = useState('F');
 
       useEffect(() => {
         try {
-          localStorage.setItem('klassrum_app_data_v4', JSON.stringify(appData));
+          localStorage.setItem('klassrum_app_data_v5', JSON.stringify(appData));
         } catch (e) {
           console.error(e);
         }
@@ -258,61 +232,6 @@
         }));
       };
 
-      // Uppdatera eller spara elev
-      const saveStudent = (updatedStudent) => {
-        setAppData(prev => {
-          const classStudents = prev.classes[currentClass.id].students;
-          const exists = classStudents.some(s => s.id === updatedStudent.id);
-          const newStudents = exists
-            ? classStudents.map(s => s.id === updatedStudent.id ? updatedStudent : s)
-            : [...classStudents, updatedStudent];
-
-          return {
-            ...prev,
-            classes: {
-              ...prev.classes,
-              [currentClass.id]: {
-                ...prev.classes[currentClass.id],
-                students: newStudents
-              }
-            }
-          };
-        });
-        setEditingStudent(null);
-      };
-
-      // Radera elev
-      const deleteStudent = (studentId) => {
-        if (!confirm("Är du säker på att du vill ta bort denna elev ur klassen?")) return;
-        setAppData(prev => {
-          const newStudents = prev.classes[currentClass.id].students.filter(s => s.id !== studentId);
-          // Rensa även bort från bänkar
-          const newMonths = { ...prev.classes[currentClass.id].months };
-          Object.keys(newMonths).forEach(m => {
-            const seating = { ...newMonths[m] };
-            Object.keys(seating).forEach(d => {
-              if (seating[d] === studentId) seating[d] = null;
-            });
-            newMonths[m] = seating;
-          });
-
-          return {
-            ...prev,
-            classes: {
-              ...prev.classes,
-              [currentClass.id]: {
-                ...prev.classes[currentClass.id],
-                students: newStudents,
-                months: newMonths
-              }
-            }
-          };
-        });
-        if (selectedStudentId === studentId) setSelectedStudentId(null);
-        setEditingStudent(null);
-      };
-
-      // Klickhanterare för bänkar
       const handleDeskClick = (deskId) => {
         if (selectedStudentId) {
           const currentOccupant = currentSeating[deskId];
@@ -363,11 +282,7 @@
           return;
         }
 
-        if (selectedStudentId === studentId) {
-          setSelectedStudentId(null);
-        } else {
-          setSelectedStudentId(studentId);
-        }
+        setSelectedStudentId(selectedStudentId === studentId ? null : studentId);
       };
 
       const handleUnseat = (studentId, e) => {
@@ -380,91 +295,41 @@
         if (selectedStudentId === studentId) setSelectedStudentId(null);
       };
 
-      // Statusberäkning
       const getDeskStatus = (deskId, student) => {
-        if (!student) return { status: 'empty', reasons: [] };
+        if (!student) return { status: 'empty' };
         const neighborIds = (ADJACENCY[deskId] || []).map(id => currentSeating[id]).filter(Boolean);
         const neighbors = neighborIds.map(id => studentMap[id]).filter(Boolean);
         const prefs = student.prefs || {};
-        const reasons = [];
 
-        // Kollisioner
         if (prefs.avoid && prefs.avoid.some(id => neighborIds.includes(id))) {
-          const avoidedNeighbors = prefs.avoid.filter(id => neighborIds.includes(id)).map(id => studentMap[id]?.name);
-          reasons.push(`Sitter bredvid undvikna elever: ${avoidedNeighbors.join(', ')}`);
-          return { status: 'red', reasons };
+          return { status: 'red' };
         }
 
-        if (prefs.backRow && !deskId.startsWith('r3')) {
-          reasons.push('Har behov av bakre raden');
-          return { status: 'red', reasons };
-        }
-        if (prefs.nearGroup && !['r3_1', 'r3_2', 'r2_1'].includes(deskId)) {
-          reasons.push('Har behov av plats nära grupprum');
-          return { status: 'red', reasons };
-        }
-        if (prefs.nearDoor && !['d1', 'd2', 'r2_1'].includes(deskId)) {
-          reasons.push('Har behov av plats nära dörr');
-          return { status: 'red', reasons };
-        }
+        if (prefs.backRow && !deskId.startsWith('r3')) return { status: 'red' };
+        if (prefs.nearGroup && !['r3_1', 'r3_2', 'r2_1'].includes(deskId)) return { status: 'red' };
+        if (prefs.nearDoor && !['d1', 'd2', 'r2_1'].includes(deskId)) return { status: 'red' };
 
-        // Varningar (Gul)
         let isYellow = false;
         if (neighbors.length > 0) {
           const hasSameGender = neighbors.some(n => n.gender === student.gender);
-          if (!hasSameGender) {
-            reasons.push('Saknar bänkkamrat av samma kön');
-            isYellow = true;
-          }
+          if (!hasSameGender) isYellow = true;
         }
 
         if (prefs.friends && prefs.friends.length > 0) {
           const friendNextTo = prefs.friends.some(id => neighborIds.includes(id));
-          if (!friendNextTo) {
-            const friendNames = prefs.friends.map(id => studentMap[id]?.name).filter(Boolean);
-            reasons.push(`Sitter inte bredvid önskade vänner (${friendNames.join(', ')})`);
-            isYellow = true;
-          }
+          if (!friendNextTo) isYellow = true;
         }
 
-        if (isYellow) return { status: 'yellow', reasons };
-        return { status: 'green', reasons: ['Alla regler och anpassningar uppfylls!'] };
+        if (isYellow) return { status: 'yellow' };
+        return { status: 'green' };
       };
 
       const formatStudentName = (name) => {
-        if (!name) return { text: '', fontSize: 'text-xs' };
-        if (name.length <= 6) return { text: name, fontSize: 'text-sm font-semibold' };
-        if (name.length <= 9) return { text: name, fontSize: 'text-xs font-semibold' };
-        if (name.length <= 13) return { text: name, fontSize: 'text-[10px] font-semibold leading-tight' };
-        return { text: name, fontSize: 'text-[9px] font-medium leading-tight' };
-      };
-
-      const exportBackup = () => {
-        const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(appData, null, 2));
-        const downloadAnchor = document.createElement('a');
-        downloadAnchor.setAttribute("href", dataStr);
-        downloadAnchor.setAttribute("download", `klassrum_backup_${appData.activeClassId}.json`);
-        document.body.appendChild(downloadAnchor);
-        downloadAnchor.click();
-        downloadAnchor.remove();
-      };
-
-      const importBackup = (e) => {
-        const file = e.target.files[0];
-        if (!file) return;
-        const reader = new FileReader();
-        reader.onload = (event) => {
-          try {
-            const parsed = JSON.parse(event.target.result);
-            if (parsed.classes) {
-              setAppData(parsed);
-              alert("Backup inläst!");
-            }
-          } catch (err) {
-            alert("Kunde inte läsa in filen: Felaktigt JSON-format.");
-          }
-        };
-        reader.readAsText(file);
+        if (!name) return { fontSize: 'text-xs' };
+        if (name.length <= 6) return { fontSize: 'text-sm font-semibold' };
+        if (name.length <= 9) return { fontSize: 'text-xs font-semibold' };
+        if (name.length <= 13) return { fontSize: 'text-[10px] font-semibold leading-tight' };
+        return { fontSize: 'text-[9px] font-medium leading-tight' };
       };
 
       const handleCreateMonth = () => {
@@ -511,10 +376,92 @@
         setShowNewClassModal(false);
       };
 
-      // Detaljpanel för aktivt markerad elev
-      const activeStudent = studentMap[selectedStudentId] || (selectedDeskId ? studentMap[currentSeating[selectedDeskId]] : null);
-      const activeDeskForStudent = activeStudent ? getDeskForStudent(activeStudent.id) : null;
-      const activeDeskInfo = activeStudent && activeDeskForStudent ? getDeskStatus(activeDeskForStudent, activeStudent) : null;
+      const handleAddStudent = () => {
+        if (!newStudentName.trim()) return;
+        const newS = {
+          id: 's_' + Date.now(),
+          name: newStudentName.trim(),
+          gender: newStudentGender,
+          prefs: { backRow: false, nearGroup: false, nearDoor: false, friends: [], avoid: [] }
+        };
+        setAppData(prev => ({
+          ...prev,
+          classes: {
+            ...prev.classes,
+            [currentClass.id]: {
+              ...prev.classes[currentClass.id],
+              students: [...prev.classes[currentClass.id].students, newS]
+            }
+          }
+        }));
+        setNewStudentName('');
+      };
+
+      const handleDeleteStudent = (id) => {
+        if (!confirm("Vill du ta bort denna elev?")) return;
+        setAppData(prev => {
+          const newStudents = prev.classes[currentClass.id].students.filter(s => s.id !== id);
+          const newMonths = { ...prev.classes[currentClass.id].months };
+          Object.keys(newMonths).forEach(m => {
+            const seating = { ...newMonths[m] };
+            Object.keys(seating).forEach(d => {
+              if (seating[d] === id) seating[d] = null;
+            });
+            newMonths[m] = seating;
+          });
+          return {
+            ...prev,
+            classes: {
+              ...prev.classes,
+              [currentClass.id]: {
+                ...prev.classes[currentClass.id],
+                students: newStudents,
+                months: newMonths
+              }
+            }
+          };
+        });
+        if (editingStudentId === id) setEditingStudentId(null);
+      };
+
+      const handleUpdateStudentPref = (studentId, key, value) => {
+        setAppData(prev => {
+          const updated = prev.classes[currentClass.id].students.map(s => {
+            if (s.id !== studentId) return s;
+            return {
+              ...s,
+              prefs: {
+                ...s.prefs,
+                [key]: value
+              }
+            };
+          });
+          return {
+            ...prev,
+            classes: {
+              ...prev.classes,
+              [currentClass.id]: {
+                ...prev.classes[currentClass.id],
+                students: updated
+              }
+            }
+          };
+        });
+      };
+
+      const handleSaveClassName = () => {
+        if (!tempClassName.trim()) return;
+        setAppData(prev => ({
+          ...prev,
+          classes: {
+            ...prev.classes,
+            [currentClass.id]: {
+              ...prev.classes[currentClass.id],
+              name: tempClassName.trim()
+            }
+          }
+        }));
+      };
 
       const renderDesk = (deskId, customClass = "") => {
         const studentId = currentSeating[deskId];
@@ -646,24 +593,6 @@
                   >
                     <span>🖨️ Spara som PDF</span>
                   </button>
-
-                  <button
-                    onClick={exportBackup}
-                    className="bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs px-2.5 py-1.5 rounded-lg border border-slate-300"
-                  >
-                    Exportera backup
-                  </button>
-
-                  <label className="cursor-pointer bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs px-2.5 py-1.5 rounded-lg border border-slate-300">
-                    Importera
-                    <input
-                      ref={fileInputRef}
-                      type="file"
-                      accept=".json"
-                      onChange={importBackup}
-                      className="hidden"
-                    />
-                  </label>
                 </div>
               </header>
             )}
@@ -683,47 +612,6 @@
               </div>
             )}
 
-            {/* DETALJRUTA FÖR ANPASSNINGAR VID VAL AV ELEV */}
-            {!isPrintMode && activeStudent && (
-              <div className="bg-white border border-blue-200 rounded-xl px-4 py-2 mb-2 shadow-sm flex items-center justify-between text-xs animate-fadeIn">
-                <div className="flex items-center gap-3">
-                  <span className="font-bold text-slate-800 text-sm">{activeStudent.name} ({activeStudent.gender === 'F' ? 'Flicka' : 'Pojke'})</span>
-                  <div className="flex items-center gap-1.5">
-                    {activeStudent.prefs?.backRow && <span className="bg-slate-100 text-slate-700 border px-1.5 py-0.5 rounded font-semibold">Gärna bakre raden</span>}
-                    {activeStudent.prefs?.nearGroup && <span className="bg-indigo-50 text-indigo-700 border border-indigo-200 px-1.5 py-0.5 rounded font-semibold">Nära grupprum</span>}
-                    {activeStudent.prefs?.nearDoor && <span className="bg-amber-50 text-amber-700 border border-amber-200 px-1.5 py-0.5 rounded font-semibold">Nära dörr</span>}
-                    {activeStudent.prefs?.friends?.length > 0 && (
-                      <span className="bg-emerald-50 text-emerald-800 border border-emerald-200 px-1.5 py-0.5 rounded">
-                        Vill sitta med: {activeStudent.prefs.friends.map(id => studentMap[id]?.name).filter(Boolean).join(', ')}
-                      </span>
-                    )}
-                    {activeStudent.prefs?.avoid?.length > 0 && (
-                      <span className="bg-rose-50 text-rose-800 border border-rose-200 px-1.5 py-0.5 rounded font-semibold">
-                        Ska EJ sitta med: {activeStudent.prefs.avoid.map(id => studentMap[id]?.name).filter(Boolean).join(', ')}
-                      </span>
-                    )}
-                  </div>
-                </div>
-
-                <div className="flex items-center gap-2">
-                  {activeDeskInfo && (
-                    <span className={`px-2 py-0.5 rounded font-semibold ${
-                      activeDeskInfo.status === 'green' ? 'bg-emerald-100 text-emerald-800' :
-                      activeDeskInfo.status === 'yellow' ? 'bg-amber-100 text-amber-800' : 'bg-rose-100 text-rose-800'
-                    }`}>
-                      {activeDeskInfo.reasons[0]}
-                    </span>
-                  )}
-                  <button
-                    onClick={() => setEditingStudent(activeStudent)}
-                    className="bg-blue-50 text-blue-700 hover:bg-blue-100 border border-blue-200 px-2 py-1 rounded font-semibold"
-                  >
-                    ✏️ Redigera anpassningar
-                  </button>
-                </div>
-              </div>
-            )}
-
             {/* KLASSRUMMETS BÄNKAR */}
             <div className="flex-1 flex flex-col justify-between bg-white rounded-2xl border border-slate-200 p-4 shadow-sm relative overflow-hidden">
               
@@ -738,56 +626,61 @@
                 <div className="w-16"></div>
               </div>
 
-              {/* RAD 1: DRESSINEN & FÖRSTA KLASS */}
-              <div className="w-full grid grid-cols-10 gap-2.5 px-2 my-1">
-                <div className="col-start-2 col-span-3 flex justify-center">
-                  <div className="border border-slate-300 bg-slate-50/70 p-1.5 rounded-lg flex flex-col items-center w-full max-w-[210px]">
-                    <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Dressinen</span>
-                    <div className="grid grid-cols-2 gap-2 w-full">
-                      {renderDesk('d1')}
-                      {renderDesk('d2')}
-                    </div>
+              {/* RAD 1: DRESSINEN & FÖRSTA KLASS 
+                  Exakt samma storlek som bänkarna i bakre raden (10-kolumnsraster, 2 kolumner per sektion)
+              */}
+              <div className="w-full grid grid-cols-10 gap-2 px-2 my-1">
+                <div className="col-start-2 col-span-2 flex flex-col items-center">
+                  <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-1">Dressinen</span>
+                  <div className="grid grid-cols-2 gap-2 w-full">
+                    {renderDesk('d1')}
+                    {renderDesk('d2')}
                   </div>
                 </div>
 
-                <div className="col-span-2"></div>
+                <div className="col-span-4"></div>
 
-                <div className="col-start-7 col-span-3 flex justify-center">
-                  <div className="border border-slate-300 bg-slate-50/70 p-1.5 rounded-lg flex flex-col items-center w-full max-w-[210px]">
-                    <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Första klass</span>
-                    <div className="grid grid-cols-2 gap-2 w-full">
-                      {renderDesk('fk1')}
-                      {renderDesk('fk2')}
-                    </div>
+                <div className="col-start-8 col-span-2 flex flex-col items-center">
+                  <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-1">Första klass</span>
+                  <div className="grid grid-cols-2 gap-2 w-full">
+                    {renderDesk('fk1')}
+                    {renderDesk('fk2')}
                   </div>
                 </div>
               </div>
 
-              {/* RAD 2: MITTENRADEN (5 + 5) */}
-              <div className="w-full flex items-center justify-between gap-4 px-2 my-1">
-                <div className="flex-1 grid grid-cols-5 gap-2">
-                  {renderDesk('r2_1')}
-                  {renderDesk('r2_2')}
-                  {renderDesk('r2_3')}
-                  {renderDesk('r2_4')}
-                  {renderDesk('r2_5')}
+              {/* RAD 2: MITTENRADEN (Vänsterfemman & Högerfemman) */}
+              <div className="w-full flex flex-col px-2 my-1">
+                <div className="flex items-center justify-between w-full mb-1 px-1">
+                  <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Vänsterfemman</span>
+                  <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Högerfemman</span>
                 </div>
+                <div className="w-full flex items-center justify-between gap-4">
+                  <div className="flex-1 grid grid-cols-5 gap-2">
+                    {renderDesk('r2_1')}
+                    {renderDesk('r2_2')}
+                    {renderDesk('r2_3')}
+                    {renderDesk('r2_4')}
+                    {renderDesk('r2_5')}
+                  </div>
 
-                <div className="w-6 flex items-center justify-center text-slate-300 font-bold text-xs">
-                  ||
-                </div>
+                  <div className="w-6 flex items-center justify-center text-slate-300 font-bold text-xs">
+                    ||
+                  </div>
 
-                <div className="flex-1 grid grid-cols-5 gap-2">
-                  {renderDesk('r2_6')}
-                  {renderDesk('r2_7')}
-                  {renderDesk('r2_8')}
-                  {renderDesk('r2_9')}
-                  {renderDesk('r2_10')}
+                  <div className="flex-1 grid grid-cols-5 gap-2">
+                    {renderDesk('r2_6')}
+                    {renderDesk('r2_7')}
+                    {renderDesk('r2_8')}
+                    {renderDesk('r2_9')}
+                    {renderDesk('r2_10')}
+                  </div>
                 </div>
               </div>
 
-              {/* RAD 3: BAKRE RADEN (10) */}
-              <div className="w-full px-2 my-1">
+              {/* RAD 3: BAKRE RADEN (Bakre tian) */}
+              <div className="w-full flex flex-col px-2 my-1">
+                <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-1 px-1">Bakre tian</span>
                 <div className="grid grid-cols-10 gap-2 w-full">
                   {renderDesk('r3_1')}
                   {renderDesk('r3_2')}
@@ -802,9 +695,9 @@
                 </div>
               </div>
 
-              {/* GRUPPRUM & FÖRKLARING */}
+              {/* GRUPPRUM (Blå ruta nere till vänster) & FÖRKLARING */}
               <div className="flex items-center justify-between w-full h-10 px-2 mt-1">
-                <div className="bg-rose-600 text-white font-bold px-4 py-1.5 rounded-md shadow text-xs tracking-wide">
+                <div className="bg-blue-600 text-white font-bold px-4 py-1.5 rounded-md shadow text-xs tracking-wide">
                   Grupprum
                 </div>
                 
@@ -826,28 +719,25 @@
             </div>
           </div>
 
-          {/* HÖGER SPALT: ELEVLISTA MED REDIGERINGSKNAPPAR */}
+          {/* HÖGER SPALT: REN ELEVLISTA MED "REDIGERA KLASSLISTA" ÖVERST */}
           {!isPrintMode && (
-            <aside className="w-80 bg-white border-l border-slate-300 flex flex-col h-full shadow-lg">
-              <div className="p-3 border-b border-slate-200 bg-slate-50 flex items-center justify-between">
-                <div>
-                  <h2 className="font-bold text-slate-800 text-sm">Elever ({students.length})</h2>
-                  <p className="text-[11px] text-slate-500">Klicka för att välja/placera</p>
-                </div>
+            <aside className="w-72 bg-white border-l border-slate-300 flex flex-col h-full shadow-lg">
+              
+              <div className="p-3 border-b border-slate-200 bg-slate-50">
                 <button
-                  onClick={() => setEditingStudent({
-                    id: 's_' + Date.now(),
-                    name: '',
-                    gender: 'F',
-                    prefs: { backRow: false, nearGroup: false, nearDoor: false, friends: [], avoid: [] }
-                  })}
-                  className="bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold px-2.5 py-1.5 rounded-lg shadow-sm"
+                  onClick={() => {
+                    setTempClassName(currentClass.name);
+                    setShowClassModal(true);
+                  }}
+                  className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-3 rounded-lg text-xs shadow-sm transition flex items-center justify-center gap-1.5"
                 >
-                  + Ny elev
+                  <span>⚙️</span>
+                  <span>Redigera klasslista</span>
                 </button>
               </div>
 
               <div className="flex-1 overflow-y-auto p-3 space-y-4">
+                
                 {/* FLICKOR */}
                 <div>
                   <div className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5 border-b pb-1">
@@ -857,45 +747,27 @@
                     {girls.map(student => {
                       const currentDesk = getDeskForStudent(student.id);
                       const isSelected = selectedStudentId === student.id;
-                      const prefs = student.prefs || {};
 
                       return (
                         <div
                           key={student.id}
                           onClick={() => handleStudentListClick(student.id)}
                           className={`
-                            flex items-center justify-between p-1.5 rounded-lg border text-xs cursor-pointer transition group
+                            flex items-center justify-between p-2 rounded-lg border text-xs cursor-pointer transition
                             ${isSelected ? 'bg-blue-50 border-blue-500 ring-2 ring-blue-300' : 'bg-slate-50 border-slate-200 hover:bg-slate-100'}
                           `}
                         >
-                          <div className="flex items-center gap-1.5 min-w-0">
+                          <div className="flex items-center gap-2 min-w-0">
                             <span className="w-2 h-2 rounded-full bg-pink-400 shrink-0"></span>
                             <span className="font-semibold text-slate-800 truncate">{student.name}</span>
                           </div>
 
-                          <div className="flex items-center gap-1 shrink-0">
-                            {prefs.backRow && <span className="bg-slate-200 text-[9px] px-1 py-0.5 rounded font-bold text-slate-700">Bak</span>}
-                            {prefs.nearGroup && <span className="bg-indigo-100 text-[9px] px-1 py-0.5 rounded font-bold text-indigo-700">Grupp</span>}
-                            {prefs.nearDoor && <span className="bg-amber-100 text-[9px] px-1 py-0.5 rounded font-bold text-amber-700">Dörr</span>}
-
-                            {/* Redigera-penna */}
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setEditingStudent({ ...student });
-                              }}
-                              className="text-slate-400 hover:text-blue-600 p-0.5 rounded ml-0.5"
-                              title="Redigera anpassningar"
-                            >
-                              ✏️
-                            </button>
-
-                            {/* Bänkstatus / Ta bort från bänk */}
+                          <div>
                             {currentDesk ? (
                               <button
                                 onClick={(e) => handleUnseat(student.id, e)}
                                 title="Ta bort från bänk"
-                                className="ml-1 bg-emerald-100 hover:bg-rose-100 text-emerald-800 hover:text-rose-700 text-[10px] font-bold px-1.5 py-0.5 rounded transition"
+                                className="bg-emerald-100 hover:bg-rose-100 text-emerald-800 hover:text-rose-700 text-[10px] font-bold px-1.5 py-0.5 rounded transition"
                               >
                                 {currentDesk.toUpperCase()} ✕
                               </button>
@@ -918,43 +790,27 @@
                     {boys.map(student => {
                       const currentDesk = getDeskForStudent(student.id);
                       const isSelected = selectedStudentId === student.id;
-                      const prefs = student.prefs || {};
 
                       return (
                         <div
                           key={student.id}
                           onClick={() => handleStudentListClick(student.id)}
                           className={`
-                            flex items-center justify-between p-1.5 rounded-lg border text-xs cursor-pointer transition group
+                            flex items-center justify-between p-2 rounded-lg border text-xs cursor-pointer transition
                             ${isSelected ? 'bg-blue-50 border-blue-500 ring-2 ring-blue-300' : 'bg-slate-50 border-slate-200 hover:bg-slate-100'}
                           `}
                         >
-                          <div className="flex items-center gap-1.5 min-w-0">
+                          <div className="flex items-center gap-2 min-w-0">
                             <span className="w-2 h-2 rounded-full bg-blue-400 shrink-0"></span>
                             <span className="font-semibold text-slate-800 truncate">{student.name}</span>
                           </div>
 
-                          <div className="flex items-center gap-1 shrink-0">
-                            {prefs.backRow && <span className="bg-slate-200 text-[9px] px-1 py-0.5 rounded font-bold text-slate-700">Bak</span>}
-                            {prefs.nearGroup && <span className="bg-indigo-100 text-[9px] px-1 py-0.5 rounded font-bold text-indigo-700">Grupp</span>}
-                            {prefs.nearDoor && <span className="bg-amber-100 text-[9px] px-1 py-0.5 rounded font-bold text-amber-700">Dörr</span>}
-
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setEditingStudent({ ...student });
-                              }}
-                              className="text-slate-400 hover:text-blue-600 p-0.5 rounded ml-0.5"
-                              title="Redigera anpassningar"
-                            >
-                              ✏️
-                            </button>
-
+                          <div>
                             {currentDesk ? (
                               <button
                                 onClick={(e) => handleUnseat(student.id, e)}
                                 title="Ta bort från bänk"
-                                className="ml-1 bg-emerald-100 hover:bg-rose-100 text-emerald-800 hover:text-rose-700 text-[10px] font-bold px-1.5 py-0.5 rounded transition"
+                                className="bg-emerald-100 hover:bg-rose-100 text-emerald-800 hover:text-rose-700 text-[10px] font-bold px-1.5 py-0.5 rounded transition"
                               >
                                 {currentDesk.toUpperCase()} ✕
                               </button>
@@ -972,178 +828,218 @@
             </aside>
           )}
 
-          {/* MODAL: REDIGERA ELEV OCH ANPASSNINGAR */}
-          {editingStudent && (
+          {/* MODAL: REDIGERA KLASSLISTA */}
+          {showClassModal && (
             <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-              <div className="bg-white rounded-2xl max-w-lg w-full p-6 shadow-2xl flex flex-col max-h-[90vh] overflow-y-auto">
+              <div className="bg-white rounded-2xl max-w-4xl w-full h-[85vh] p-6 shadow-2xl flex flex-col">
+                
+                {/* Header */}
                 <div className="flex items-center justify-between pb-3 border-b mb-4">
-                  <h3 className="text-base font-bold text-slate-800">
-                    {editingStudent.name ? `Redigera ${editingStudent.name}` : 'Ny elev'}
-                  </h3>
-                  <button onClick={() => setEditingStudent(null)} className="text-slate-400 hover:text-slate-700 font-bold">✕</button>
+                  <div className="flex items-center gap-3">
+                    <span className="font-bold text-slate-700 text-sm">Klassnamn:</span>
+                    <input
+                      type="text"
+                      value={tempClassName}
+                      onChange={(e) => setTempClassName(e.target.value)}
+                      onBlur={handleSaveClassName}
+                      className="border border-slate-300 rounded px-2 py-1 text-sm font-bold w-28 focus:ring-2 focus:ring-blue-500"
+                    />
+                  </div>
+                  <button
+                    onClick={() => {
+                      handleSaveClassName();
+                      setShowClassModal(false);
+                      setEditingStudentId(null);
+                    }}
+                    className="text-slate-500 hover:text-slate-800 font-bold text-lg px-2"
+                  >
+                    ✕
+                  </button>
                 </div>
 
-                <div className="space-y-4">
-                  {/* Namn & Kön */}
-                  <div className="grid grid-cols-3 gap-3">
-                    <div className="col-span-2">
-                      <label className="block text-xs font-bold text-slate-600 mb-1">Namn</label>
+                <div className="flex-1 flex gap-4 overflow-hidden">
+                  
+                  {/* Vänster kolumn: Lista & Lägg till */}
+                  <div className="w-1/3 flex flex-col border-r pr-4">
+                    <div className="flex gap-2 mb-3">
                       <input
                         type="text"
-                        value={editingStudent.name}
-                        onChange={(e) => setEditingStudent({ ...editingStudent, name: e.target.value })}
-                        className="w-full border border-slate-300 rounded-lg px-3 py-1.5 text-sm focus:ring-2 focus:ring-blue-500"
-                        placeholder="Elevens namn..."
+                        placeholder="Ny elev..."
+                        value={newStudentName}
+                        onChange={(e) => setNewStudentName(e.target.value)}
+                        className="flex-1 border rounded px-2 py-1 text-xs"
                       />
-                    </div>
-                    <div>
-                      <label className="block text-xs font-bold text-slate-600 mb-1">Kön</label>
                       <select
-                        value={editingStudent.gender}
-                        onChange={(e) => setEditingStudent({ ...editingStudent, gender: e.target.value })}
-                        className="w-full border border-slate-300 rounded-lg px-2.5 py-1.5 text-sm bg-white focus:ring-2 focus:ring-blue-500"
+                        value={newStudentGender}
+                        onChange={(e) => setNewStudentGender(e.target.value)}
+                        className="border rounded px-1 py-1 text-xs bg-white"
                       >
-                        <option value="F">Flicka</option>
-                        <option value="P">Pojke</option>
+                        <option value="F">F</option>
+                        <option value="P">P</option>
                       </select>
+                      <button
+                        onClick={handleAddStudent}
+                        className="bg-blue-600 hover:bg-blue-700 text-white font-bold px-3 py-1 rounded text-xs"
+                      >
+                        +
+                      </button>
+                    </div>
+
+                    <div className="flex-1 overflow-y-auto space-y-1">
+                      {students.map(s => (
+                        <div
+                          key={s.id}
+                          onClick={() => setEditingStudentId(s.id)}
+                          className={`
+                            flex items-center justify-between p-2 rounded cursor-pointer text-xs transition
+                            ${editingStudentId === s.id ? 'bg-blue-100 border-blue-400 font-bold' : 'hover:bg-slate-100 border border-transparent'}
+                          `}
+                        >
+                          <div className="flex items-center gap-1.5">
+                            <span className={`w-2 h-2 rounded-full ${s.gender === 'F' ? 'bg-pink-400' : 'bg-blue-400'}`}></span>
+                            <span>{s.name}</span>
+                          </div>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleDeleteStudent(s.id);
+                            }}
+                            className="text-slate-400 hover:text-rose-600 text-xs px-1"
+                          >
+                            🗑️
+                          </button>
+                        </div>
+                      ))}
                     </div>
                   </div>
 
-                  {/* Placering / Särskilda behov */}
-                  <div>
-                    <label className="block text-xs font-bold text-slate-600 mb-2">Särskilda behov i rummet</label>
-                    <div className="grid grid-cols-3 gap-2">
-                      <label className="flex items-center gap-2 p-2 border rounded-lg bg-slate-50 cursor-pointer text-xs">
-                        <input
-                          type="checkbox"
-                          checked={!!editingStudent.prefs?.backRow}
-                          onChange={(e) => setEditingStudent({
-                            ...editingStudent,
-                            prefs: { ...editingStudent.prefs, backRow: e.target.checked }
-                          })}
-                          className="rounded text-blue-600"
-                        />
-                        <span>Bakre raden</span>
-                      </label>
+                  {/* Höger kolumn: Anpassningar för vald elev */}
+                  <div className="flex-1 overflow-y-auto pl-2">
+                    {editingStudentId ? (() => {
+                      const curStudent = studentMap[editingStudentId];
+                      if (!curStudent) return null;
+                      const prefs = curStudent.prefs || {};
 
-                      <label className="flex items-center gap-2 p-2 border rounded-lg bg-slate-50 cursor-pointer text-xs">
-                        <input
-                          type="checkbox"
-                          checked={!!editingStudent.prefs?.nearGroup}
-                          onChange={(e) => setEditingStudent({
-                            ...editingStudent,
-                            prefs: { ...editingStudent.prefs, nearGroup: e.target.checked }
-                          })}
-                          className="rounded text-blue-600"
-                        />
-                        <span>Nära grupprum</span>
-                      </label>
+                      return (
+                        <div className="space-y-4">
+                          <h4 className="font-bold text-sm text-slate-800 pb-2 border-b">
+                            Anpassningar för {curStudent.name}
+                          </h4>
 
-                      <label className="flex items-center gap-2 p-2 border rounded-lg bg-slate-50 cursor-pointer text-xs">
-                        <input
-                          type="checkbox"
-                          checked={!!editingStudent.prefs?.nearDoor}
-                          onChange={(e) => setEditingStudent({
-                            ...editingStudent,
-                            prefs: { ...editingStudent.prefs, nearDoor: e.target.checked }
-                          })}
-                          className="rounded text-blue-600"
-                        />
-                        <span>Nära dörr</span>
-                      </label>
-                    </div>
+                          {/* Särskilda behov */}
+                          <div>
+                            <span className="block text-xs font-bold text-slate-600 mb-1.5">Särskilda behov i rummet:</span>
+                            <div className="grid grid-cols-3 gap-2">
+                              <label className="flex items-center gap-2 p-2 border rounded bg-slate-50 cursor-pointer text-xs">
+                                <input
+                                  type="checkbox"
+                                  checked={!!prefs.backRow}
+                                  onChange={(e) => handleUpdateStudentPref(curStudent.id, 'backRow', e.target.checked)}
+                                  className="rounded text-blue-600"
+                                />
+                                <span>Gärna bakre raden</span>
+                              </label>
+
+                              <label className="flex items-center gap-2 p-2 border rounded bg-slate-50 cursor-pointer text-xs">
+                                <input
+                                  type="checkbox"
+                                  checked={!!prefs.nearGroup}
+                                  onChange={(e) => handleUpdateStudentPref(curStudent.id, 'nearGroup', e.target.checked)}
+                                  className="rounded text-blue-600"
+                                />
+                                <span>Gärna nära grupprum</span>
+                              </label>
+
+                              <label className="flex items-center gap-2 p-2 border rounded bg-slate-50 cursor-pointer text-xs">
+                                <input
+                                  type="checkbox"
+                                  checked={!!prefs.nearDoor}
+                                  onChange={(e) => handleUpdateStudentPref(curStudent.id, 'nearDoor', e.target.checked)}
+                                  className="rounded text-blue-600"
+                                />
+                                <span>Gärna nära dörr</span>
+                              </label>
+                            </div>
+                          </div>
+
+                          {/* Sitter gärna bredvid */}
+                          <div>
+                            <span className="block text-xs font-bold text-slate-600 mb-1">Får gärna sitta bredvid (önskemål):</span>
+                            <div className="border rounded-lg p-2 max-h-36 overflow-y-auto grid grid-cols-2 gap-1 bg-slate-50 text-xs">
+                              {students.filter(o => o.id !== curStudent.id).map(o => {
+                                const isFriend = (prefs.friends || []).includes(o.id);
+                                return (
+                                  <label key={o.id} className="flex items-center gap-2 p-1 hover:bg-slate-100 rounded cursor-pointer">
+                                    <input
+                                      type="checkbox"
+                                      checked={isFriend}
+                                      onChange={(e) => {
+                                        const curList = prefs.friends || [];
+                                        const updated = e.target.checked
+                                          ? [...curList, o.id]
+                                          : curList.filter(id => id !== o.id);
+                                        handleUpdateStudentPref(curStudent.id, 'friends', updated);
+                                      }}
+                                      className="rounded text-emerald-600"
+                                    />
+                                    <span className="truncate">{o.name}</span>
+                                  </label>
+                                );
+                              })}
+                            </div>
+                          </div>
+
+                          {/* Får INTE sitta bredvid */}
+                          <div>
+                            <span className="block text-xs font-bold text-rose-700 mb-1">Får INTE sitta bredvid (konfliktrisk):</span>
+                            <div className="border border-rose-200 bg-rose-50/30 rounded-lg p-2 max-h-36 overflow-y-auto grid grid-cols-2 gap-1 text-xs">
+                              {students.filter(o => o.id !== curStudent.id).map(o => {
+                                const isAvoid = (prefs.avoid || []).includes(o.id);
+                                return (
+                                  <label key={o.id} className="flex items-center gap-2 p-1 hover:bg-rose-100/50 rounded cursor-pointer">
+                                    <input
+                                      type="checkbox"
+                                      checked={isAvoid}
+                                      onChange={(e) => {
+                                        const curList = prefs.avoid || [];
+                                        const updated = e.target.checked
+                                          ? [...curList, o.id]
+                                          : curList.filter(id => id !== o.id);
+                                        handleUpdateStudentPref(curStudent.id, 'avoid', updated);
+                                      }}
+                                      className="rounded text-rose-600"
+                                    />
+                                    <span className="truncate">{o.name}</span>
+                                  </label>
+                                );
+                              })}
+                            </div>
+                          </div>
+
+                        </div>
+                      );
+                    })() : (
+                      <div className="h-full flex items-center justify-center text-slate-400 text-xs italic">
+                        Välj en elev till vänster för att redigera anpassningar.
+                      </div>
+                    )}
                   </div>
 
-                  {/* Sitter gärna bredvid */}
-                  <div>
-                    <label className="block text-xs font-bold text-slate-600 mb-1">
-                      Får gärna sitta bredvid (önskemål)
-                    </label>
-                    <div className="border border-slate-200 rounded-lg p-2 max-h-32 overflow-y-auto grid grid-cols-2 gap-1 bg-slate-50 text-xs">
-                      {students.filter(s => s.id !== editingStudent.id).map(other => {
-                        const isFriend = editingStudent.prefs?.friends?.includes(other.id);
-                        return (
-                          <label key={other.id} className="flex items-center gap-1.5 p-1 rounded hover:bg-slate-100 cursor-pointer">
-                            <input
-                              type="checkbox"
-                              checked={!!isFriend}
-                              onChange={(e) => {
-                                const currentFriends = editingStudent.prefs?.friends || [];
-                                const newFriends = e.target.checked
-                                  ? [...currentFriends, other.id]
-                                  : currentFriends.filter(id => id !== other.id);
-                                setEditingStudent({
-                                  ...editingStudent,
-                                  prefs: { ...editingStudent.prefs, friends: newFriends }
-                                });
-                              }}
-                              className="rounded text-emerald-600"
-                            />
-                            <span className="truncate">{other.name}</span>
-                          </label>
-                        );
-                      })}
-                    </div>
-                  </div>
-
-                  {/* Får INTE sitta bredvid */}
-                  <div>
-                    <label className="block text-xs font-bold text-rose-700 mb-1">
-                      Får INTE sitta bredvid (konfliktrisk / förbud)
-                    </label>
-                    <div className="border border-rose-200 bg-rose-50/30 rounded-lg p-2 max-h-32 overflow-y-auto grid grid-cols-2 gap-1 text-xs">
-                      {students.filter(s => s.id !== editingStudent.id).map(other => {
-                        const isAvoid = editingStudent.prefs?.avoid?.includes(other.id);
-                        return (
-                          <label key={other.id} className="flex items-center gap-1.5 p-1 rounded hover:bg-rose-100/50 cursor-pointer">
-                            <input
-                              type="checkbox"
-                              checked={!!isAvoid}
-                              onChange={(e) => {
-                                const currentAvoid = editingStudent.prefs?.avoid || [];
-                                const newAvoid = e.target.checked
-                                  ? [...currentAvoid, other.id]
-                                  : currentAvoid.filter(id => id !== other.id);
-                                setEditingStudent({
-                                  ...editingStudent,
-                                  prefs: { ...editingStudent.prefs, avoid: newAvoid }
-                                });
-                              }}
-                              className="rounded text-rose-600"
-                            />
-                            <span className="truncate">{other.name}</span>
-                          </label>
-                        );
-                      })}
-                    </div>
-                  </div>
                 </div>
 
-                <div className="flex items-center justify-between pt-4 border-t mt-4">
-                  {students.some(s => s.id === editingStudent.id) ? (
-                    <button
-                      onClick={() => deleteStudent(editingStudent.id)}
-                      className="text-rose-600 hover:text-rose-800 text-xs font-semibold px-2 py-1"
-                    >
-                      Ta bort elev ur klassen
-                    </button>
-                  ) : <div></div>}
-
-                  <div className="flex gap-2">
-                    <button
-                      onClick={() => setEditingStudent(null)}
-                      className="px-3 py-1.5 text-xs text-slate-600 hover:bg-slate-100 rounded-lg font-medium"
-                    >
-                      Avbryt
-                    </button>
-                    <button
-                      onClick={() => saveStudent(editingStudent)}
-                      className="px-4 py-1.5 text-xs bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-bold"
-                    >
-                      Spara ändringar
-                    </button>
-                  </div>
+                <div className="pt-3 border-t flex justify-end">
+                  <button
+                    onClick={() => {
+                      handleSaveClassName();
+                      setShowClassModal(false);
+                      setEditingStudentId(null);
+                    }}
+                    className="bg-blue-600 hover:bg-blue-700 text-white font-bold px-4 py-2 rounded-lg text-xs"
+                  >
+                    Klar
+                  </button>
                 </div>
+
               </div>
             </div>
           )}
@@ -1153,7 +1049,6 @@
             <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-center justify-center p-4">
               <div className="bg-white rounded-xl p-5 max-w-sm w-full shadow-2xl">
                 <h3 className="text-base font-bold text-slate-800 mb-2">Spara aktuell placering</h3>
-                <p className="text-xs text-slate-500 mb-4">Ange namn på perioden (t.ex. "Oktober 2026").</p>
                 <input
                   type="text"
                   placeholder="Månadens namn..."
@@ -1186,7 +1081,7 @@
                 <h3 className="text-base font-bold text-slate-800 mb-2">Skapa ny klass</h3>
                 <input
                   type="text"
-                  placeholder="Klassnamn (t.ex. 9A)..."
+                  placeholder="Klassnamn..."
                   value={newClassName}
                   onChange={(e) => setNewClassName(e.target.value)}
                   className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm mb-4 focus:ring-2 focus:ring-blue-500"

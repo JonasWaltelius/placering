@@ -70,6 +70,9 @@
     const sortMonthsDesc = (monthsObj) => {
       const keys = Object.keys(monthsObj);
       return keys.sort((a, b) => {
+        if (a === 'Tom') return 1;
+        if (b === 'Tom') return -1;
+
         const parse = (str) => {
           const parts = str.toLowerCase().split(/\s+/);
           let year = 2026;
@@ -97,13 +100,14 @@
       });
     };
 
+    // Grunddata med utgångspunkt i "Tom" (inga utplacerade elever)
     const INITIAL_DATA = {
       activeClassId: '7H',
       classes: {
         '7H': {
           id: '7H',
           name: '7H',
-          activeMonth: 'September 2026',
+          activeMonth: 'Tom',
           students: [
             { id: 's_klara', name: 'Klara', gender: 'F', prefs: { backRow: false, nearGroup: false, nearDoor: false, friends: [], avoid: [] } },
             { id: 's_alicia', name: 'Alicia', gender: 'F', prefs: { backRow: false, nearGroup: false, nearDoor: false, friends: [], avoid: [] } },
@@ -131,34 +135,16 @@
             { id: 's_mohammed2', name: 'Mohammed S.', gender: 'P', prefs: { backRow: true, nearGroup: false, nearDoor: false, friends: [], avoid: [] } },
           ],
           months: {
-            'September 2026': {
-              createdAt: 1725148800000,
-              seating: {
-                d1: 's_klara', d2: 's_alicia',
-                fk1: 's_elliot', fk2: 's_edgar',
-                r2_1: 's_ramona', r2_2: 's_marta', r2_3: 's_wilmer', r2_4: 's_ivar', r2_5: 's_alfred',
-                r2_6: 's_liam', r2_7: 's_louie', r2_8: 's_oscar', r2_9: 's_amanda', r2_10: 's_signe',
-                r3_1: 's_joar', r3_2: 's_martin', r3_3: 's_teodor', r3_4: null, r3_5: 's_li',
-                r3_6: 's_mohammad', r3_7: 's_vincent', r3_8: 's_valdemar', r3_9: 's_mohammed2', r3_10: null
-              }
-            },
-            'Augusti 2026': {
-              createdAt: 1722470400000,
-              seating: {
-                d1: 's_wilmer', d2: 's_vincent',
-                fk1: 's_mohammad', fk2: 's_ivar',
-                r2_1: 's_mohammed2', r2_2: 's_liam', r2_3: 's_teodor', r2_4: 's_li', r2_5: 's_marta',
-                r2_6: 's_klara', r2_7: 's_ramona', r2_8: 's_martin', r2_9: 's_valdemar', r2_10: 's_edgar',
-                r3_1: 's_joar', r3_2: 's_oscar', r3_3: 's_alicia', r3_4: 's_signe', r3_5: 's_elliot',
-                r3_6: 's_alfred', r3_7: 's_louie', r3_8: null, r3_9: 's_amanda', r3_10: null
-              }
+            'Tom': {
+              createdAt: 0,
+              seating: {}
             }
           }
         },
         '8H': {
           id: '8H',
           name: '8H',
-          activeMonth: 'September 2026',
+          activeMonth: 'Tom',
           students: [
             { id: 's8_melisia', name: 'Melisia', gender: 'F', prefs: { backRow: false, nearGroup: false, nearDoor: false, friends: [], avoid: [] } },
             { id: 's8_nichole', name: 'Nichole', gender: 'F', prefs: { backRow: false, nearGroup: false, nearDoor: false, friends: [], avoid: [] } },
@@ -187,16 +173,9 @@
             { id: 's8_elis', name: 'Elis', gender: 'P', prefs: { backRow: false, nearGroup: false, nearDoor: false, friends: [], avoid: [] } },
           ],
           months: {
-            'September 2026': {
-              createdAt: 1725148800000,
-              seating: {
-                d1: 's8_melisia', d2: 's8_nichole',
-                fk1: 's8_chloe', fk2: 's8_marta',
-                r2_1: 's8_astrid', r2_2: 's8_annie', r2_3: 's8_nissel', r2_4: 's8_pelle', r2_5: 's8_august',
-                r2_6: 's8_nella', r2_7: 's8_freja', r2_8: 's8_felix', r2_9: 's8_nilsc', r2_10: 's8_albin',
-                r3_1: 's8_victor', r3_2: 's8_frank', r3_3: 's8_sigrid', r3_4: 's8_greta', r3_5: 's8_julia',
-                r3_6: 's8_erik', r3_7: 's8_tage', r3_8: 's8_efraim', r3_9: 's8_elis', r3_10: null
-              }
+            'Tom': {
+              createdAt: 0,
+              seating: {}
             }
           }
         }
@@ -213,16 +192,9 @@
     function App() {
       const [appData, setAppData] = useState(() => {
         try {
-          const saved = localStorage.getItem('klassrum_app_data_v10');
+          const saved = localStorage.getItem('klassrum_app_data_v11');
           if (saved) {
             const parsed = JSON.parse(saved);
-            Object.values(parsed.classes).forEach(c => {
-              Object.keys(c.months).forEach(m => {
-                if (!c.months[m].seating) {
-                  c.months[m] = { seating: c.months[m], createdAt: Date.now() };
-                }
-              });
-            });
             return parsed;
           }
         } catch (e) {
@@ -250,20 +222,20 @@
 
       useEffect(() => {
         try {
-          localStorage.setItem('klassrum_app_data_v10', JSON.stringify(appData));
+          localStorage.setItem('klassrum_app_data_v11', JSON.stringify(appData));
         } catch (e) {
           console.error(e);
         }
       }, [appData]);
 
       const currentClass = appData.classes[appData.activeClassId] || Object.values(appData.classes)[0];
-      const sortedMonths = useMemo(() => sortMonthsDesc(currentClass.months), [currentClass.months]);
+      const sortedMonths = useMemo(() => sortMonthsDesc(currentClass.months || {}), [currentClass.months]);
       
       const currentMonth = currentClass.activeMonth && currentClass.months[currentClass.activeMonth] 
         ? currentClass.activeMonth 
-        : sortedMonths[0];
+        : (sortedMonths[0] || 'Tom');
 
-      const currentSeating = (currentClass.months[currentMonth]?.seating) || {};
+      const currentSeating = (currentClass.months && currentClass.months[currentMonth]?.seating) || {};
       const students = currentClass.students || [];
 
       const studentMap = useMemo(() => {
@@ -282,6 +254,7 @@
         return null;
       };
 
+      // Välj en månad -> laddar in dess sparade placering
       const selectAndOpenMonth = (mName) => {
         setAppData(prev => ({
           ...prev,
@@ -298,23 +271,27 @@
         setShowViewMonthModal(false);
       };
 
+      // Uppdatera placering i aktiv månad
       const updateSeating = (newSeatingMap) => {
-        setAppData(prev => ({
-          ...prev,
-          classes: {
-            ...prev.classes,
-            [currentClass.id]: {
-              ...prev.classes[currentClass.id],
-              months: {
-                ...prev.classes[currentClass.id].months,
-                [currentMonth]: {
-                  seating: newSeatingMap,
-                  createdAt: prev.classes[currentClass.id].months[currentMonth]?.createdAt || Date.now()
+        setAppData(prev => {
+          const currentMonths = prev.classes[currentClass.id].months || {};
+          return {
+            ...prev,
+            classes: {
+              ...prev.classes,
+              [currentClass.id]: {
+                ...prev.classes[currentClass.id],
+                months: {
+                  ...currentMonths,
+                  [currentMonth]: {
+                    seating: newSeatingMap,
+                    createdAt: currentMonths[currentMonth]?.createdAt || Date.now()
+                  }
                 }
               }
             }
-          }
-        }));
+          };
+        });
       };
 
       const handleDeskClick = (deskId) => {
@@ -486,9 +463,12 @@
         return { fontSize: 'text-[9px] md:text-[10px] font-medium leading-tight' };
       };
 
+      // SPARA MÅNAD: Sparar aktuell vy som ny månad och gör den aktiv direkt
       const handleSaveNewMonth = () => {
         if (!newMonthName.trim()) return;
         const name = newMonthName.trim();
+        const currentSnap = { ...currentSeating };
+
         setAppData(prev => ({
           ...prev,
           classes: {
@@ -499,7 +479,7 @@
               months: {
                 ...prev.classes[currentClass.id].months,
                 [name]: {
-                  seating: { ...currentSeating },
+                  seating: currentSnap,
                   createdAt: Date.now()
                 }
               }
@@ -511,9 +491,8 @@
       };
 
       const handleDeleteMonth = (mName) => {
-        const remaining = Object.keys(currentClass.months).filter(m => m !== mName);
-        if (remaining.length === 0) {
-          alert("Klassen måste ha minst en sparad månad.");
+        if (mName === 'Tom') {
+          alert("Läget 'Tom' kan inte raderas.");
           return;
         }
         if (!confirm(`Vill du ta bort "${mName}"?`)) return;
@@ -527,7 +506,7 @@
               ...prev.classes,
               [currentClass.id]: {
                 ...prev.classes[currentClass.id],
-                activeMonth: currentMonth === mName ? remaining[0] : currentMonth,
+                activeMonth: currentMonth === mName ? 'Tom' : currentMonth,
                 months: newMonths
               }
             }
@@ -536,6 +515,10 @@
       };
 
       const handleRenameMonth = (oldName) => {
+        if (oldName === 'Tom') {
+          alert("Läget 'Tom' kan inte döpas om.");
+          return;
+        }
         const newName = prompt(`Ändra namn på "${oldName}":`, oldName);
         if (!newName || !newName.trim() || newName.trim() === oldName) return;
         const cleanName = newName.trim();
@@ -576,10 +559,10 @@
             [id]: {
               id: id,
               name: id,
-              activeMonth: 'Ny period',
+              activeMonth: 'Tom',
               students: [],
               months: {
-                'Ny period': { seating: {}, createdAt: Date.now() }
+                'Tom': { seating: {}, createdAt: 0 }
               }
             }
           }
@@ -775,7 +758,7 @@
                     className="flex items-center gap-1.5 bg-slate-100 hover:bg-slate-200 text-slate-800 font-semibold text-xs px-3 py-1.5 rounded-lg border border-slate-300 transition"
                   >
                     <span>📅</span>
-                    <span>Visa månad ({currentMonth})</span>
+                    <span>Visa månad: <strong className="text-blue-600 font-bold ml-0.5">{currentMonth}</strong></span>
                   </button>
 
                   {/* KNAPP: SPARA MÅNAD */}
@@ -827,7 +810,7 @@
               </div>
             )}
 
-            {/* KLASSRUMMETS BÄNKAR - FÖRDELAS JÄMNT OCH FYLLER UT RUMMET NATURLIGT */}
+            {/* KLASSRUMMETS BÄNKAR */}
             <div className="flex-1 flex flex-col justify-between bg-white rounded-2xl border border-slate-200 p-4 md:p-6 shadow-sm relative overflow-hidden">
               
               {/* KATEDER & DÖRR */}
@@ -908,7 +891,7 @@
                 </div>
               </div>
 
-              {/* GRUPPRUM & FÖRKLARING - TYDLIGT I BILD */}
+              {/* GRUPPRUM & FÖRKLARING */}
               <div className="flex items-center justify-between w-full h-9 px-2 mt-1 shrink-0">
                 <div className="bg-blue-600 text-white font-bold px-4 py-1.5 rounded-md shadow text-xs tracking-wide">
                   Grupprum
@@ -1041,7 +1024,7 @@
             </aside>
           )}
 
-          {/* MODAL: VISA MÅNAD (ÖPPNAR LISTA OCH LADDAR IN KLICKAD MÅNAD) */}
+          {/* MODAL: VISA MÅNAD */}
           {showViewMonthModal && (
             <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
               <div className="bg-white rounded-2xl max-w-sm w-full p-5 shadow-2xl flex flex-col">
@@ -1067,28 +1050,30 @@
                       <span className={currentMonth === mName ? 'text-blue-700' : 'text-slate-700'}>
                         {mName} {currentMonth === mName && '✓ (aktiv)'}
                       </span>
-                      <div className="flex items-center gap-1.5">
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleRenameMonth(mName);
-                          }}
-                          className="text-slate-400 hover:text-blue-600 p-1"
-                          title="Byt namn"
-                        >
-                          ✏️
-                        </button>
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleDeleteMonth(mName);
-                          }}
-                          className="text-slate-400 hover:text-rose-600 p-1"
-                          title="Ta bort"
-                        >
-                          🗑️
-                        </button>
-                      </div>
+                      {mName !== 'Tom' && (
+                        <div className="flex items-center gap-1.5">
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleRenameMonth(mName);
+                            }}
+                            className="text-slate-400 hover:text-blue-600 p-1"
+                            title="Byt namn"
+                          >
+                            ✏️
+                          </button>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleDeleteMonth(mName);
+                            }}
+                            className="text-slate-400 hover:text-rose-600 p-1"
+                            title="Ta bort"
+                          >
+                            🗑️
+                          </button>
+                        </div>
+                      )}
                     </div>
                   ))}
                 </div>
@@ -1105,7 +1090,7 @@
             </div>
           )}
 
-          {/* MODAL: SPARA MÅNAD (ANGE NAMN OCH SPARA NUVARANDE PLACERING) */}
+          {/* MODAL: SPARA MÅNAD */}
           {showSaveMonthModal && (
             <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
               <div className="bg-white rounded-2xl max-w-sm w-full p-5 shadow-2xl flex flex-col">
@@ -1118,14 +1103,14 @@
                   <label className="block text-xs font-bold text-slate-700 mb-1.5">Månadens/Periodens namn:</label>
                   <input
                     type="text"
-                    placeholder="T.ex. December 2026..."
+                    placeholder="T.ex. Maj 2026..."
                     value={newMonthName}
                     onChange={(e) => setNewMonthName(e.target.value)}
                     className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500"
                     autoFocus
                   />
                   <p className="text-[11px] text-slate-500 mt-1.5">
-                    Aktuell placering i klassrummet kommer att sparas under detta namn och hamna överst i listan.
+                    Den nuvarande placeringen sparas isolerat under detta namn och hamnar i listan.
                   </p>
                 </div>
 

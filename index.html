@@ -161,10 +161,17 @@
       }
     };
 
+    const ALL_DESK_IDS = [
+      'd1', 'd2', 'fk1', 'fk2',
+      'r2_1', 'r2_2', 'r2_3', 'r2_4', 'r2_5',
+      'r2_6', 'r2_7', 'r2_8', 'r2_9', 'r2_10',
+      'r3_1', 'r3_2', 'r3_3', 'r3_4', 'r3_5', 'r3_6', 'r3_7', 'r3_8', 'r3_9', 'r3_10'
+    ];
+
     function App() {
       const [appData, setAppData] = useState(() => {
         try {
-          const saved = localStorage.getItem('klassrum_app_data_v5');
+          const saved = localStorage.getItem('klassrum_app_data_v6');
           if (saved) return JSON.parse(saved);
         } catch (e) {
           console.error(e);
@@ -176,12 +183,11 @@
       const [selectedStudentId, setSelectedStudentId] = useState(null);
       const [isPrintMode, setIsPrintMode] = useState(false);
       const [showClassModal, setShowClassModal] = useState(false);
-      const [showNewMonthModal, setShowNewMonthModal] = useState(false);
+      const [showMonthManagerModal, setShowMonthManagerModal] = useState(false);
       const [newMonthName, setNewMonthName] = useState('');
       const [showNewClassModal, setShowNewClassModal] = useState(false);
       const [newClassName, setNewClassName] = useState('');
 
-      // Form state i redigera klasslista
       const [tempClassName, setTempClassName] = useState('');
       const [editingStudentId, setEditingStudentId] = useState(null);
       const [newStudentName, setNewStudentName] = useState('');
@@ -189,7 +195,7 @@
 
       useEffect(() => {
         try {
-          localStorage.setItem('klassrum_app_data_v5', JSON.stringify(appData));
+          localStorage.setItem('klassrum_app_data_v6', JSON.stringify(appData));
         } catch (e) {
           console.error(e);
         }
@@ -324,6 +330,81 @@
         return { status: 'green' };
       };
 
+      // Slumpgenerator utifrån förutsättningarna
+      const handleGenerateSeating = () => {
+        if (students.length === 0) return;
+
+        const calculateScore = (testSeating) => {
+          let score = 0;
+          for (const deskId of ALL_DESK_IDS) {
+            const sId = testSeating[deskId];
+            if (!sId) continue;
+            const student = studentMap[sId];
+            if (!student) continue;
+
+            const neighborIds = (ADJACENCY[deskId] || []).map(id => testSeating[id]).filter(Boolean);
+            const prefs = student.prefs || {};
+
+            // Straffa hårt vid undvikna elever
+            if (prefs.avoid && prefs.avoid.some(id => neighborIds.includes(id))) {
+              score -= 1000;
+            }
+
+            // Särskilda behov
+            if (prefs.backRow) {
+              if (deskId.startsWith('r3')) score += 60;
+              else score -= 150;
+            }
+            if (prefs.nearGroup) {
+              if (['r3_1', 'r3_2', 'r2_1'].includes(deskId)) score += 60;
+              else score -= 150;
+            }
+            if (prefs.nearDoor) {
+              if (['d1', 'd2', 'r2_1'].includes(deskId)) score += 60;
+              else score -= 150;
+            }
+
+            // Önskade vänner
+            if (prefs.friends && prefs.friends.length > 0) {
+              const friendNextTo = prefs.friends.some(id => neighborIds.includes(id));
+              if (friendNextTo) score += 40;
+            }
+
+            // Minst en av samma kön
+            if (neighborIds.length > 0) {
+              const sameGender = neighborIds.some(nId => studentMap[nId]?.gender === student.gender);
+              if (sameGender) score += 20;
+              else score -= 30;
+            }
+          }
+          return score;
+        };
+
+        let bestSeating = null;
+        let bestScore = -Infinity;
+
+        // Kör 350 slumpmässiga permutationer och välj den bästa
+        for (let iteration = 0; iteration < 350; iteration++) {
+          const shuffledStudents = [...students].sort(() => Math.random() - 0.5);
+          const trialSeating = {};
+          ALL_DESK_IDS.forEach((deskId, index) => {
+            trialSeating[deskId] = shuffledStudents[index] ? shuffledStudents[index].id : null;
+          });
+
+          const currentScore = calculateScore(trialSeating);
+          if (currentScore > bestScore) {
+            bestScore = currentScore;
+            bestSeating = trialSeating;
+          }
+        }
+
+        if (bestSeating) {
+          updateSeating(bestSeating);
+          setSelectedDeskId(null);
+          setSelectedStudentId(null);
+        }
+      };
+
       const formatStudentName = (name) => {
         if (!name) return { fontSize: 'text-xs' };
         if (name.length <= 6) return { fontSize: 'text-sm font-semibold' };
@@ -332,7 +413,8 @@
         return { fontSize: 'text-[9px] font-medium leading-tight' };
       };
 
-      const handleCreateMonth = () => {
+      // Månadshantering
+      const handleSaveNewMonth = () => {
         if (!newMonthName.trim()) return;
         const name = newMonthName.trim();
         setAppData(prev => ({
@@ -350,7 +432,61 @@
           }
         }));
         setNewMonthName('');
-        setShowNewMonthModal(false);
+      };
+
+      const handleDeleteMonth = (mName) => {
+        const remaining = Object.keys(currentClass.months).filter(m => m !== mName);
+        if (remaining.length === 0) {
+          alert("Klassen måste ha minst en sparad månad.");
+          return;
+        }
+        if (!confirm(`Vill du ta bort "${mName}"?`)) return;
+
+        setAppData(prev => {
+          const newMonths = { ...prev.classes[currentClass.id].months };
+          delete newMonths[mName];
+          return {
+            ...prev,
+            classes: {
+              ...prev.classes,
+              [currentClass.id]: {
+                ...prev.classes[currentClass.id],
+                activeMonth: currentMonth === mName ? remaining[0] : currentMonth,
+                months: newMonths
+              }
+            }
+          };
+        });
+      };
+
+      const handleRenameMonth = (oldName) => {
+        const newName = prompt(`Ändra namn på "${oldName}":`, oldName);
+        if (!newName || !newName.trim() || newName.trim() === oldName) return;
+        const cleanName = newName.trim();
+
+        setAppData(prev => {
+          const oldMonths = prev.classes[currentClass.id].months;
+          const updatedMonths = {};
+          Object.keys(oldMonths).forEach(m => {
+            if (m === oldName) {
+              updatedMonths[cleanName] = oldMonths[oldName];
+            } else {
+              updatedMonths[m] = oldMonths[m];
+            }
+          });
+
+          return {
+            ...prev,
+            classes: {
+              ...prev.classes,
+              [currentClass.id]: {
+                ...prev.classes[currentClass.id],
+                activeMonth: currentMonth === oldName ? cleanName : currentMonth,
+                months: updatedMonths
+              }
+            }
+          };
+        });
       };
 
       const handleCreateClass = () => {
@@ -471,12 +607,17 @@
 
         let borderAndBg = "bg-amber-100/90 border-amber-300 text-amber-900";
         if (student) {
-          if (status === 'green') {
+          if (isPrintMode) {
+            // I utskrift/spara som PDF är alla upptagna bänkar konsekvent gröna
             borderAndBg = "bg-emerald-50 border-emerald-500 text-emerald-950 shadow-sm";
-          } else if (status === 'yellow') {
-            borderAndBg = "bg-amber-50 border-amber-500 text-amber-950 shadow-sm";
-          } else if (status === 'red') {
-            borderAndBg = "bg-rose-50 border-rose-500 text-rose-950 shadow-sm";
+          } else {
+            if (status === 'green') {
+              borderAndBg = "bg-emerald-50 border-emerald-500 text-emerald-950 shadow-sm";
+            } else if (status === 'yellow') {
+              borderAndBg = "bg-amber-50 border-amber-500 text-amber-950 shadow-sm";
+            } else if (status === 'red') {
+              borderAndBg = "bg-rose-50 border-rose-500 text-rose-950 shadow-sm";
+            }
           }
         }
 
@@ -576,14 +717,24 @@
                   </select>
 
                   <button
-                    onClick={() => setShowNewMonthModal(true)}
-                    className="text-xs bg-blue-50 hover:bg-blue-100 text-blue-700 px-2 py-1 rounded-md border border-blue-200 font-medium"
+                    onClick={() => setShowMonthManagerModal(true)}
+                    className="text-xs bg-blue-50 hover:bg-blue-100 text-blue-700 px-2.5 py-1 rounded-md border border-blue-200 font-medium"
                   >
                     💾 Spara månad
                   </button>
                 </div>
 
                 <div className="flex items-center gap-2">
+                  {/* Slumpgenerator-knapp */}
+                  <button
+                    onClick={handleGenerateSeating}
+                    className="flex items-center gap-1.5 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold text-xs px-3 py-1.5 rounded-lg shadow-sm transition"
+                    title="Slumpa ut eleverna utifrån regler och förutsättningar"
+                  >
+                    <span>🎲</span>
+                    <span>Slumpa placering</span>
+                  </button>
+
                   <button
                     onClick={() => {
                       setIsPrintMode(true);
@@ -597,7 +748,7 @@
               </header>
             )}
 
-            {/* PRESENTATIONSHUVUD */}
+            {/* PRESENTATIONSHUVUD I UTSKRIFT */}
             {isPrintMode && (
               <div className="flex items-center justify-between pb-2 mb-2 border-b border-slate-300">
                 <h1 className="text-xl font-bold text-slate-800">
@@ -626,9 +777,7 @@
                 <div className="w-16"></div>
               </div>
 
-              {/* RAD 1: DRESSINEN & FÖRSTA KLASS 
-                  Exakt samma storlek som bänkarna i bakre raden (10-kolumnsraster, 2 kolumner per sektion)
-              */}
+              {/* RAD 1: DRESSINEN & FÖRSTA KLASS */}
               <div className="w-full grid grid-cols-10 gap-2 px-2 my-1">
                 <div className="col-start-2 col-span-2 flex flex-col items-center">
                   <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-1">Dressinen</span>
@@ -649,11 +798,12 @@
                 </div>
               </div>
 
-              {/* RAD 2: MITTENRADEN (Vänsterfemman & Högerfemman) */}
+              {/* RAD 2: MITTENRADEN (Vänsterfemman & Högerfemman - sett ur lärarens perspektiv) */}
               <div className="w-full flex flex-col px-2 my-1">
                 <div className="flex items-center justify-between w-full mb-1 px-1">
-                  <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Vänsterfemman</span>
+                  {/* Ur lärarens perspektiv vid katedern: höger i bild är lärarens vänster och vice versa */}
                   <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Högerfemman</span>
+                  <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Vänsterfemman</span>
                 </div>
                 <div className="w-full flex items-center justify-between gap-4">
                   <div className="flex-1 grid grid-cols-5 gap-2">
@@ -695,7 +845,7 @@
                 </div>
               </div>
 
-              {/* GRUPPRUM (Blå ruta nere till vänster) & FÖRKLARING */}
+              {/* GRUPPRUM (Blå ruta) & FÖRKLARING */}
               <div className="flex items-center justify-between w-full h-10 px-2 mt-1">
                 <div className="bg-blue-600 text-white font-bold px-4 py-1.5 rounded-md shadow text-xs tracking-wide">
                   Grupprum
@@ -719,31 +869,32 @@
             </div>
           </div>
 
-          {/* HÖGER SPALT: REN ELEVLISTA MED "REDIGERA KLASSLISTA" ÖVERST */}
+          {/* HÖGER SPALT: ELEVLISTA I 2 SPALTER SÅ ALLA RYMS UTAN SCROLL */}
           {!isPrintMode && (
-            <aside className="w-72 bg-white border-l border-slate-300 flex flex-col h-full shadow-lg">
+            <aside className="w-84 bg-white border-l border-slate-300 flex flex-col h-full shadow-lg">
               
-              <div className="p-3 border-b border-slate-200 bg-slate-50">
+              <div className="p-2.5 border-b border-slate-200 bg-slate-50">
                 <button
                   onClick={() => {
                     setTempClassName(currentClass.name);
                     setShowClassModal(true);
                   }}
-                  className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-3 rounded-lg text-xs shadow-sm transition flex items-center justify-center gap-1.5"
+                  className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-1.5 px-3 rounded-lg text-xs shadow-sm transition flex items-center justify-center gap-1.5"
                 >
                   <span>⚙️</span>
                   <span>Redigera klasslista</span>
                 </button>
               </div>
 
-              <div className="flex-1 overflow-y-auto p-3 space-y-4">
+              {/* 2 SPALTER (Flickor till vänster, Pojkar till höger) */}
+              <div className="flex-1 grid grid-cols-2 gap-1.5 p-2 overflow-hidden">
                 
-                {/* FLICKOR */}
-                <div>
-                  <div className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5 border-b pb-1">
+                {/* SPALT 1: FLICKOR */}
+                <div className="flex flex-col h-full overflow-hidden border-r pr-1 border-slate-100">
+                  <div className="text-[10px] font-bold text-slate-500 uppercase tracking-wider pb-1 mb-1 border-b">
                     Flickor ({girls.length})
                   </div>
-                  <div className="space-y-1">
+                  <div className="flex-1 flex flex-col justify-start space-y-1 overflow-hidden">
                     {girls.map(student => {
                       const currentDesk = getDeskForStudent(student.id);
                       const isSelected = selectedStudentId === student.id;
@@ -753,26 +904,26 @@
                           key={student.id}
                           onClick={() => handleStudentListClick(student.id)}
                           className={`
-                            flex items-center justify-between p-2 rounded-lg border text-xs cursor-pointer transition
-                            ${isSelected ? 'bg-blue-50 border-blue-500 ring-2 ring-blue-300' : 'bg-slate-50 border-slate-200 hover:bg-slate-100'}
+                            flex items-center justify-between px-1.5 py-1 rounded border text-[11px] leading-tight cursor-pointer transition
+                            ${isSelected ? 'bg-blue-50 border-blue-500 ring-2 ring-blue-300 font-semibold' : 'bg-slate-50 border-slate-200 hover:bg-slate-100'}
                           `}
                         >
-                          <div className="flex items-center gap-2 min-w-0">
-                            <span className="w-2 h-2 rounded-full bg-pink-400 shrink-0"></span>
-                            <span className="font-semibold text-slate-800 truncate">{student.name}</span>
+                          <div className="flex items-center gap-1 min-w-0">
+                            <span className="w-1.5 h-1.5 rounded-full bg-pink-400 shrink-0"></span>
+                            <span className="text-slate-800 truncate">{student.name}</span>
                           </div>
 
-                          <div>
+                          <div className="shrink-0 ml-1">
                             {currentDesk ? (
                               <button
                                 onClick={(e) => handleUnseat(student.id, e)}
                                 title="Ta bort från bänk"
-                                className="bg-emerald-100 hover:bg-rose-100 text-emerald-800 hover:text-rose-700 text-[10px] font-bold px-1.5 py-0.5 rounded transition"
+                                className="bg-emerald-100 hover:bg-rose-100 text-emerald-800 hover:text-rose-700 text-[9px] font-bold px-1 py-0.5 rounded leading-none"
                               >
                                 {currentDesk.toUpperCase()} ✕
                               </button>
                             ) : (
-                              <span className="text-[10px] text-slate-400 italic px-1">Oplacerad</span>
+                              <span className="text-[9px] text-slate-400 italic">--</span>
                             )}
                           </div>
                         </div>
@@ -781,12 +932,12 @@
                   </div>
                 </div>
 
-                {/* POJKAR */}
-                <div>
-                  <div className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5 border-b pb-1">
+                {/* SPALT 2: POJKAR */}
+                <div className="flex flex-col h-full overflow-hidden pl-0.5">
+                  <div className="text-[10px] font-bold text-slate-500 uppercase tracking-wider pb-1 mb-1 border-b">
                     Pojkar ({boys.length})
                   </div>
-                  <div className="space-y-1">
+                  <div className="flex-1 flex flex-col justify-start space-y-1 overflow-hidden">
                     {boys.map(student => {
                       const currentDesk = getDeskForStudent(student.id);
                       const isSelected = selectedStudentId === student.id;
@@ -796,26 +947,26 @@
                           key={student.id}
                           onClick={() => handleStudentListClick(student.id)}
                           className={`
-                            flex items-center justify-between p-2 rounded-lg border text-xs cursor-pointer transition
-                            ${isSelected ? 'bg-blue-50 border-blue-500 ring-2 ring-blue-300' : 'bg-slate-50 border-slate-200 hover:bg-slate-100'}
+                            flex items-center justify-between px-1.5 py-1 rounded border text-[11px] leading-tight cursor-pointer transition
+                            ${isSelected ? 'bg-blue-50 border-blue-500 ring-2 ring-blue-300 font-semibold' : 'bg-slate-50 border-slate-200 hover:bg-slate-100'}
                           `}
                         >
-                          <div className="flex items-center gap-2 min-w-0">
-                            <span className="w-2 h-2 rounded-full bg-blue-400 shrink-0"></span>
-                            <span className="font-semibold text-slate-800 truncate">{student.name}</span>
+                          <div className="flex items-center gap-1 min-w-0">
+                            <span className="w-1.5 h-1.5 rounded-full bg-blue-400 shrink-0"></span>
+                            <span className="text-slate-800 truncate">{student.name}</span>
                           </div>
 
-                          <div>
+                          <div className="shrink-0 ml-1">
                             {currentDesk ? (
                               <button
                                 onClick={(e) => handleUnseat(student.id, e)}
                                 title="Ta bort från bänk"
-                                className="bg-emerald-100 hover:bg-rose-100 text-emerald-800 hover:text-rose-700 text-[10px] font-bold px-1.5 py-0.5 rounded transition"
+                                className="bg-emerald-100 hover:bg-rose-100 text-emerald-800 hover:text-rose-700 text-[9px] font-bold px-1 py-0.5 rounded leading-none"
                               >
                                 {currentDesk.toUpperCase()} ✕
                               </button>
                             ) : (
-                              <span className="text-[10px] text-slate-400 italic px-1">Oplacerad</span>
+                              <span className="text-[9px] text-slate-400 italic">--</span>
                             )}
                           </div>
                         </div>
@@ -826,6 +977,75 @@
 
               </div>
             </aside>
+          )}
+
+          {/* MODAL: MÅNADSHANTERARE (SPARA, BYT NAMN, TA BORT MÅNADER) */}
+          {showMonthManagerModal && (
+            <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+              <div className="bg-white rounded-2xl max-w-md w-full p-5 shadow-2xl flex flex-col">
+                <div className="flex items-center justify-between pb-3 border-b mb-3">
+                  <h3 className="text-base font-bold text-slate-800">Hantera sparade månader</h3>
+                  <button onClick={() => setShowMonthManagerModal(false)} className="text-slate-400 hover:text-slate-700 font-bold">✕</button>
+                </div>
+
+                {/* Spara aktuell layout */}
+                <div className="bg-slate-50 border border-slate-200 rounded-xl p-3 mb-4">
+                  <span className="block text-xs font-bold text-slate-700 mb-1.5">Spara nuvarande placering som ny månad:</span>
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      placeholder="T.ex. Oktober 2026..."
+                      value={newMonthName}
+                      onChange={(e) => setNewMonthName(e.target.value)}
+                      className="flex-1 border border-slate-300 rounded-lg px-2.5 py-1.5 text-xs focus:ring-2 focus:ring-blue-500"
+                    />
+                    <button
+                      onClick={handleSaveNewMonth}
+                      className="bg-blue-600 hover:bg-blue-700 text-white font-semibold text-xs px-3 py-1.5 rounded-lg shrink-0"
+                    >
+                      Spara
+                    </button>
+                  </div>
+                </div>
+
+                {/* Lista över befintliga månader */}
+                <div className="flex-1 overflow-y-auto max-h-56 space-y-1.5 mb-4">
+                  <span className="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1">Tidigare månader:</span>
+                  {Object.keys(currentClass.months).map(mName => (
+                    <div key={mName} className="flex items-center justify-between p-2 rounded-lg border border-slate-200 bg-white text-xs">
+                      <span className={`font-semibold ${currentMonth === mName ? 'text-blue-600 font-bold' : 'text-slate-700'}`}>
+                        {mName} {currentMonth === mName && '(aktiv)'}
+                      </span>
+                      <div className="flex items-center gap-1.5">
+                        <button
+                          onClick={() => handleRenameMonth(mName)}
+                          className="text-slate-400 hover:text-blue-600 p-1"
+                          title="Byt namn på månad"
+                        >
+                          ✏️
+                        </button>
+                        <button
+                          onClick={() => handleDeleteMonth(mName)}
+                          className="text-slate-400 hover:text-rose-600 p-1"
+                          title="Ta bort månad"
+                        >
+                          🗑️
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                <div className="flex justify-end pt-2 border-t">
+                  <button
+                    onClick={() => setShowMonthManagerModal(false)}
+                    className="px-4 py-1.5 text-xs bg-slate-200 hover:bg-slate-300 text-slate-800 rounded-lg font-semibold"
+                  >
+                    Stäng
+                  </button>
+                </div>
+              </div>
+            </div>
           )}
 
           {/* MODAL: REDIGERA KLASSLISTA */}
@@ -1040,36 +1260,6 @@
                   </button>
                 </div>
 
-              </div>
-            </div>
-          )}
-
-          {/* MODAL: SPARA NY MÅNAD */}
-          {showNewMonthModal && (
-            <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-              <div className="bg-white rounded-xl p-5 max-w-sm w-full shadow-2xl">
-                <h3 className="text-base font-bold text-slate-800 mb-2">Spara aktuell placering</h3>
-                <input
-                  type="text"
-                  placeholder="Månadens namn..."
-                  value={newMonthName}
-                  onChange={(e) => setNewMonthName(e.target.value)}
-                  className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm mb-4 focus:ring-2 focus:ring-blue-500"
-                />
-                <div className="flex justify-end gap-2">
-                  <button
-                    onClick={() => setShowNewMonthModal(false)}
-                    className="px-3 py-1.5 text-xs text-slate-600 hover:bg-slate-100 rounded-lg font-medium"
-                  >
-                    Avbryt
-                  </button>
-                  <button
-                    onClick={handleCreateMonth}
-                    className="px-3 py-1.5 text-xs bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-semibold"
-                  >
-                    Spara månad
-                  </button>
-                </div>
               </div>
             </div>
           )}
